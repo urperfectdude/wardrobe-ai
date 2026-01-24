@@ -7,6 +7,7 @@ import { generateOutfit, OCCASION_CATEGORIES } from '../utils/outfitMatcher'
 import { EXISTING_CATEGORY4, EXISTING_COLORS, generateOutfitDescription } from '../utils/openaiAnalysis'
 import { useAuth } from '../contexts/AuthContext'
 import { ChevronDown, ChevronUp, History, Bookmark } from 'lucide-react'
+import OnboardingFlow from '../components/OnboardingFlow'
 
 const MOODS = [
     { id: 'party', label: 'Party' },
@@ -126,11 +127,13 @@ export default function GetOutfit() {
 
     // User preferences state
     const [preferences, setPreferences] = useState({
-        favoriteStyles: [],
-        favoriteColors: [],
-        bodyType: '',
-        avoidColors: [],
-        budget: 'medium'
+        thriftPreference: 'both',
+        sizes: [],
+        preferredColors: [],
+        budget: [500, 5000],
+        fitType: [],
+        preferredStyles: [],
+        materials: []
     })
     const [savingPrefs, setSavingPrefs] = useState(false)
     const [recentOutfits, setRecentOutfits] = useState([])
@@ -269,10 +272,23 @@ export default function GetOutfit() {
         }, 800)
     }, [wardrobeItems, shopProducts, source])
 
+    const [showOnboarding, setShowOnboarding] = useState(false)
+
     const handleGenerateOutfit = useCallback(() => {
         if (!selectedMood) return
+
+        if (!user) {
+            setShowOnboarding(true)
+            return
+        }
+
+        if ((source === 'closet' || source === 'both') && wardrobeItems.length < 2) {
+            alert("Please upload at least 2 items to your closet to generate outfits!")
+            return
+        }
+
         generateOutfitWithProducts(selectedMood)
-    }, [selectedMood, generateOutfitWithProducts])
+    }, [selectedMood, user, source, wardrobeItems.length, generateOutfitWithProducts])
 
     const handleShuffle = useCallback(() => {
         handleGenerateOutfit()
@@ -293,7 +309,10 @@ export default function GetOutfit() {
         try {
             await markOutfitAsSaved(activeOutfitId, isPublic)
             await refreshLists()
-            // Don't clear outfit, let user see they saved it.
+            // Reset page after save
+            setOutfit(null)
+            setActiveOutfitId(null)
+            setOutfitDescription('')
         } catch (error) {
             console.error('Failed to save outfit:', error)
         } finally {
@@ -853,60 +872,99 @@ export default function GetOutfit() {
                                 </button>
                             </div>
 
-                            {/* Body Type */}
+                            {/* Thrift Preference */}
                             <div style={{ marginBottom: '1rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Body Type
-                                </label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                    {BODY_TYPES.map(type => (
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Source Preference</label>
+                                <div style={{ display: 'flex', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-md)', padding: '3px' }}>
+                                    {['new', 'both', 'thrifted'].map(opt => (
                                         <button
-                                            key={type}
-                                            type="button"
-                                            className={`chip chip-outline ${preferences.bodyType === type ? 'active' : ''}`}
-                                            onClick={() => setPreferences(prev => ({ ...prev, bodyType: type }))}
-                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                                            key={opt}
+                                            className={`btn btn-sm ${preferences.thriftPreference === opt ? 'btn-white shadow-sm' : 'btn-ghost'}`}
+                                            onClick={() => setPreferences(prev => ({ ...prev, thriftPreference: opt }))}
+                                            style={{
+                                                flex: 1,
+                                                textTransform: 'capitalize',
+                                                fontSize: '0.75rem',
+                                                height: '28px',
+                                                color: preferences.thriftPreference === opt ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))'
+                                            }}
                                         >
-                                            {preferences.bodyType === type && <Check size={10} />}
-                                            {type}
+                                            {opt}
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
-                            {/* Favorite Styles */}
+                            {/* Preferred Styles */}
                             <div style={{ marginBottom: '1rem' }}>
                                 <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Favorite Styles
+                                    Preferred Styles
                                 </label>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '80px', overflowY: 'auto' }}>
                                     {EXISTING_CATEGORY4.slice(0, 15).map(style => (
                                         <button
                                             key={style}
                                             type="button"
-                                            className={`chip chip-outline ${preferences.favoriteStyles?.includes(style) ? 'active' : ''}`}
-                                            onClick={() => togglePreference('favoriteStyles', style)}
+                                            className={`chip chip-outline ${preferences.preferredStyles?.includes(style) ? 'active' : ''}`}
+                                            onClick={() => togglePreference('preferredStyles', style)}
                                             style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
                                         >
-                                            {preferences.favoriteStyles?.includes(style) && <Check size={10} />}
                                             {style}
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
-                            {/* Favorite Colors */}
+                            {/* Fit Type */}
                             <div style={{ marginBottom: '1rem' }}>
                                 <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Favorite Colors
+                                    Fit Type
+                                </label>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                    {['Slim', 'Regular', 'Relaxed', 'Oversized', 'Loose', 'Athletic'].map(type => (
+                                        <button
+                                            key={type}
+                                            type="button"
+                                            className={`chip chip-outline ${preferences.fitType?.includes(type) ? 'active' : ''}`}
+                                            onClick={() => togglePreference('fitType', type)}
+                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                                        >
+                                            {type}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Sizes */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Sizes</label>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                    {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map(size => (
+                                        <button
+                                            key={size}
+                                            type="button"
+                                            className={`chip chip-outline ${preferences.sizes?.includes(size) ? 'active' : ''}`}
+                                            onClick={() => togglePreference('sizes', size)}
+                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px', minWidth: '32px', justifyContent: 'center' }}
+                                        >
+                                            {size}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Preferred Colors */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                                    Preferred Colors
                                 </label>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                                     {EXISTING_COLORS.slice(0, 12).map(color => (
                                         <button
                                             key={color}
                                             type="button"
-                                            className={`chip chip-outline ${preferences.favoriteColors?.includes(color) ? 'active' : ''}`}
-                                            onClick={() => togglePreference('favoriteColors', color)}
+                                            className={`chip chip-outline ${preferences.preferredColors?.includes(color) ? 'active' : ''}`}
+                                            onClick={() => togglePreference('preferredColors', color)}
                                             style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
                                         >
                                             {color}
@@ -915,43 +973,43 @@ export default function GetOutfit() {
                                 </div>
                             </div>
 
-                            {/* Colors to Avoid */}
+                            {/* Materials */}
                             <div style={{ marginBottom: '1rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Colors to Avoid
-                                </label>
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Materials</label>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                    {EXISTING_COLORS.slice(0, 12).map(color => (
+                                    {['Cotton', 'Polyester', 'Silk', 'Denim', 'Wool', 'Linen', 'Leather', 'Velvet', 'Satin', 'Rayon', 'Nylon'].map(mat => (
                                         <button
-                                            key={color}
+                                            key={mat}
                                             type="button"
-                                            className={`chip chip-outline ${preferences.avoidColors?.includes(color) ? 'active' : ''}`}
-                                            onClick={() => togglePreference('avoidColors', color)}
+                                            className={`chip chip-outline ${preferences.materials?.includes(mat) ? 'active' : ''}`}
+                                            onClick={() => togglePreference('materials', mat)}
                                             style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
                                         >
-                                            {color}
+                                            {mat}
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
-                            {/* Budget */}
+                            {/* Budget Slider */}
                             <div style={{ marginBottom: '1.25rem' }}>
                                 <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Budget Range
+                                    Budget Range: ₹{Array.isArray(preferences.budget) ? preferences.budget[0] : 0} - ₹{Array.isArray(preferences.budget) ? preferences.budget[1] : 10000}+
                                 </label>
-                                <div style={{ display: 'flex', gap: '0.375rem' }}>
-                                    {[{ id: 'low', label: '₹ Budget' }, { id: 'medium', label: '₹₹ Mid' }, { id: 'high', label: '₹₹₹ Premium' }].map(b => (
-                                        <button
-                                            key={b.id}
-                                            type="button"
-                                            className={`chip chip-outline ${preferences.budget === b.id ? 'active' : ''}`}
-                                            onClick={() => setPreferences(prev => ({ ...prev, budget: b.id }))}
-                                            style={{ flex: 1, fontSize: '0.625rem', padding: '0.375rem', minHeight: '30px' }}
-                                        >
-                                            {b.label}
-                                        </button>
-                                    ))}
+                                <div style={{ padding: '0 0.5rem' }}>
+                                    <input
+                                        type="range"
+                                        className="range-slider"
+                                        min={0}
+                                        max={20000}
+                                        step={500}
+                                        value={Array.isArray(preferences.budget) ? preferences.budget[1] : 5000}
+                                        onChange={(e) => setPreferences(prev => ({
+                                            ...prev,
+                                            budget: [0, parseInt(e.target.value)]
+                                        }))}
+                                        style={{ width: '100%' }}
+                                    />
                                 </div>
                             </div>
 
@@ -964,11 +1022,18 @@ export default function GetOutfit() {
                                 Save Preferences
                             </button>
 
-                            <p style={{ fontSize: '0.6875rem', color: 'hsl(var(--muted-foreground))', textAlign: 'center', marginTop: '0.75rem' }}>
-                                You can also edit these in Profile
-                            </p>
                         </motion.div>
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {showOnboarding && (
+                    <OnboardingFlow
+                        isOpen={showOnboarding}
+                        onClose={() => setShowOnboarding(false)}
+                        onComplete={() => setShowOnboarding(false)}
+                    />
                 )}
             </AnimatePresence>
 
