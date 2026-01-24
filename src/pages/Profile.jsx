@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { getPreferences, savePreferences, getPurchaseRequests, updatePurchaseRequest } from '../utils/storage'
+import { getPreferences, savePreferences, getPurchaseRequests, updatePurchaseRequest, getSavedOutfits } from '../utils/storage'
 import { EXISTING_CATEGORY4, EXISTING_COLORS } from '../utils/openaiAnalysis'
 import OnboardingFlow from '../components/OnboardingFlow'
 
@@ -17,8 +17,9 @@ export default function Profile() {
     const [editMode, setEditMode] = useState(false)
     const [saving, setSaving] = useState(false)
     const [requests, setRequests] = useState([])
+    const [savedOutfits, setSavedOutfits] = useState([])
     const [loadingRequests, setLoadingRequests] = useState(true)
-    const [activeTab, setActiveTab] = useState('selling') // 'selling' or 'buying'
+    const [activeTab, setActiveTab] = useState('outfits') // 'outfits' or 'selling' or 'buying'
 
     const [profile, setProfile] = useState({
         name: '',
@@ -41,8 +42,19 @@ export default function Profile() {
             })
         }
         loadPreferences()
+        loadPreferences()
         loadRequests()
+        loadSavedOutfits()
     }, [userProfile])
+
+    const loadSavedOutfits = async () => {
+        try {
+            const data = await getSavedOutfits()
+            setSavedOutfits(data)
+        } catch (error) {
+            console.error('Error loading saved outfits:', error)
+        }
+    }
 
     const loadRequests = async () => {
         try {
@@ -356,129 +368,170 @@ export default function Profile() {
                 </button>
             </motion.div>
 
-            {/* Purchase Requests Section */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                style={{
-                    background: 'hsl(var(--card))',
-                    borderRadius: 'var(--radius-xl)',
-                    padding: '1.25rem',
-                    marginBottom: '1rem',
-                    border: '1px solid hsl(var(--border))'
-                }}
-            >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <h3 style={{ fontSize: '0.9375rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                        <ShoppingBag size={16} style={{ color: 'hsl(var(--accent))' }} />
-                        Marketplace Offers
-                    </h3>
-                    <div style={{ display: 'flex', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-md)', padding: '2px' }}>
-                        <button
-                            onClick={() => setActiveTab('selling')}
-                            style={{
-                                padding: '4px 12px', fontSize: '0.6875rem', fontWeight: 600, border: 'none',
-                                borderRadius: 'var(--radius-sm)', background: activeTab === 'selling' ? 'white' : 'transparent',
-                                color: activeTab === 'selling' ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            Selling
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('buying')}
-                            style={{
-                                padding: '4px 12px', fontSize: '0.6875rem', fontWeight: 600, border: 'none',
-                                borderRadius: 'var(--radius-sm)', background: activeTab === 'buying' ? 'white' : 'transparent',
-                                color: activeTab === 'buying' ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            Buying
-                        </button>
-                    </div>
-                </div>
+            {/* Content Tabs */}
+            <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+                <button
+                    className={`chip ${activeTab === 'outfits' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('outfits')}
+                    style={{ fontSize: '0.75rem' }}
+                >
+                    <Heart size={14} className={activeTab === 'outfits' ? 'fill-current' : ''} />
+                    Saved Outfits ({savedOutfits.length})
+                </button>
+                <button
+                    className={`chip ${activeTab === 'selling' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('selling')}
+                    style={{ fontSize: '0.75rem' }}
+                >
+                    <ShoppingBag size={14} />
+                    Selling ({requests.filter(r => r.seller_id === user.id).length})
+                </button>
+                <button
+                    className={`chip ${activeTab === 'buying' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('buying')}
+                    style={{ fontSize: '0.75rem' }}
+                >
+                    <ShoppingBag size={14} />
+                    Buying ({requests.filter(r => r.buyer_id === user.id).length})
+                </button>
+            </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {loadingRequests ? (
-                        <div style={{ padding: '2rem', textAlign: 'center' }}>
-                            <Loader2 size={24} className="animate-spin" style={{ color: 'hsl(var(--muted-foreground))' }} />
+            {/* Saved Outfits Grid */}
+            {activeTab === 'outfits' && (
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}
+                >
+                    {savedOutfits.length === 0 ? (
+                        <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem 1rem', background: 'hsl(var(--muted))', borderRadius: 'var(--radius-lg)' }}>
+                            <p className="text-muted text-sm">No saved outfits yet</p>
                         </div>
                     ) : (
-                        requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).length === 0 ? (
-                            <p style={{ textAlign: 'center', color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem', padding: '1.5rem 0' }}>
-                                No {activeTab} offers yet
-                            </p>
+                        savedOutfits.map(outfit => (
+                            <div key={outfit.id} className="card" style={{ padding: '0.75rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.25rem', marginBottom: '0.75rem' }}>
+                                    {outfit.items.slice(0, 4).map((item, i) => (
+                                        <div key={i} style={{ aspectRatio: '1', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'hsl(var(--muted))' }}>
+                                            <img src={item.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, textTransform: 'uppercase', color: 'hsl(var(--muted-foreground))' }}>
+                                        {outfit.mood}
+                                    </span>
+                                    <span style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))' }}>
+                                        {new Date(outfit.created_at).toLocaleDateString()}
+                                    </span>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </motion.div>
+            )}
+
+            {/* Purchase Requests Section */}
+            {(activeTab === 'selling' || activeTab === 'buying') && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    style={{
+                        background: 'hsl(var(--card))',
+                        borderRadius: 'var(--radius-xl)',
+                        padding: '1.25rem',
+                        marginBottom: '1rem',
+                        border: '1px solid hsl(var(--border))'
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <h3 style={{ fontSize: '0.9375rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                            <ShoppingBag size={16} style={{ color: 'hsl(var(--accent))' }} />
+                            Marketplace Offers
+                        </h3>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {loadingRequests ? (
+                            <div style={{ padding: '2rem', textAlign: 'center' }}>
+                                <Loader2 size={24} className="animate-spin" style={{ color: 'hsl(var(--muted-foreground))' }} />
+                            </div>
                         ) : (
-                            requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).map(request => (
-                                <div key={request.id} style={{
-                                    padding: '0.75rem',
-                                    background: 'white',
-                                    borderRadius: 'var(--radius-lg)',
-                                    border: '1px solid hsl(var(--border))'
-                                }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                            <div style={{ fontSize: '0.8125rem', fontWeight: 700 }}>₹{request.offer_price}</div>
-                                            <span style={{
-                                                fontSize: '0.5rem', fontWeight: 700, padding: '2px 4px', borderRadius: '4px',
-                                                background: request.status === 'pending' ? 'hsl(var(--secondary))' :
-                                                    request.status === 'accepted' ? 'hsl(var(--green-100))' : 'hsl(var(--destructive) / 0.1)',
-                                                color: request.status === 'accepted' ? 'hsl(var(--green-600))' :
-                                                    request.status === 'declined' ? 'hsl(var(--destructive))' : 'hsl(var(--muted-foreground))',
-                                                textTransform: 'uppercase'
-                                            }}>
-                                                {request.status}
+                            requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).length === 0 ? (
+                                <p style={{ textAlign: 'center', color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem', padding: '1.5rem 0' }}>
+                                    No {activeTab} offers yet
+                                </p>
+                            ) : (
+                                requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).map(request => (
+                                    <div key={request.id} style={{
+                                        padding: '0.75rem',
+                                        background: 'white',
+                                        borderRadius: 'var(--radius-lg)',
+                                        border: '1px solid hsl(var(--border))'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                <div style={{ fontSize: '0.8125rem', fontWeight: 700 }}>₹{request.offer_price}</div>
+                                                <span style={{
+                                                    fontSize: '0.5rem', fontWeight: 700, padding: '2px 4px', borderRadius: '4px',
+                                                    background: request.status === 'pending' ? 'hsl(var(--secondary))' :
+                                                        request.status === 'accepted' ? 'hsl(var(--green-100))' : 'hsl(var(--destructive) / 0.1)',
+                                                    color: request.status === 'accepted' ? 'hsl(var(--green-600))' :
+                                                        request.status === 'declined' ? 'hsl(var(--destructive))' : 'hsl(var(--muted-foreground))',
+                                                    textTransform: 'uppercase'
+                                                }}>
+                                                    {request.status}
+                                                </span>
+                                            </div>
+                                            <span style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))' }}>
+                                                {new Date(request.created_at).toLocaleDateString()}
                                             </span>
                                         </div>
-                                        <span style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))' }}>
-                                            {new Date(request.created_at).toLocaleDateString()}
-                                        </span>
+
+                                        {request.message && (
+                                            <p style={{ fontSize: '0.75rem', margin: '0 0 0.75rem', color: 'hsl(var(--foreground))', fontStyle: 'italic' }}>
+                                                "{request.message}"
+                                            </p>
+                                        )}
+
+                                        {activeTab === 'selling' && request.status === 'pending' && (
+                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                <button
+                                                    className="btn btn-primary btn-sm"
+                                                    style={{ flex: 1, fontSize: '0.6875rem', minHeight: '32px' }}
+                                                    onClick={() => handleUpdateRequestStatus(request.id, 'accepted')}
+                                                >
+                                                    Accept & Sell
+                                                </button>
+                                                <button
+                                                    className="btn btn-outline btn-sm"
+                                                    style={{ flex: 1, fontSize: '0.6875rem', minHeight: '32px' }}
+                                                    onClick={() => handleUpdateRequestStatus(request.id, 'declined')}
+                                                >
+                                                    Decline
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {activeTab === 'buying' && request.status === 'accepted' && (
+                                            <a
+                                                href={request.qilin_link || 'https://qilin.in'}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="btn btn-primary btn-sm w-full"
+                                                style={{ fontSize: '0.6875rem', minHeight: '32px' }}
+                                            >
+                                                Complete Purchase on Qilin.in
+                                            </a>
+                                        )}
                                     </div>
-
-                                    {request.message && (
-                                        <p style={{ fontSize: '0.75rem', margin: '0 0 0.75rem', color: 'hsl(var(--foreground))', fontStyle: 'italic' }}>
-                                            "{request.message}"
-                                        </p>
-                                    )}
-
-                                    {activeTab === 'selling' && request.status === 'pending' && (
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <button
-                                                className="btn btn-primary btn-sm"
-                                                style={{ flex: 1, fontSize: '0.6875rem', minHeight: '32px' }}
-                                                onClick={() => handleUpdateRequestStatus(request.id, 'accepted')}
-                                            >
-                                                Accept & Sell
-                                            </button>
-                                            <button
-                                                className="btn btn-outline btn-sm"
-                                                style={{ flex: 1, fontSize: '0.6875rem', minHeight: '32px' }}
-                                                onClick={() => handleUpdateRequestStatus(request.id, 'declined')}
-                                            >
-                                                Decline
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {activeTab === 'buying' && request.status === 'accepted' && (
-                                        <a
-                                            href={request.qilin_link || 'https://qilin.in'}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="btn btn-primary btn-sm w-full"
-                                            style={{ fontSize: '0.6875rem', minHeight: '32px' }}
-                                        >
-                                            Complete Purchase on Qilin.in
-                                        </a>
-                                    )}
-                                </div>
-                            ))
-                        )
-                    )}
-                </div>
-            </motion.div>
+                                ))
+                            )
+                        )}
+                    </div>
+                </motion.div>
+            )}
 
             {/* Sign Out */}
             <motion.button

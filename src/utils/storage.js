@@ -9,9 +9,13 @@ import { supabase } from '../lib/supabase'
 
 export async function getWardrobeItems() {
     try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return []
+
         const { data, error } = await supabase
             .from('wardrobe_items')
             .select('*')
+            .eq('user_id', user.id)
             .order('created_at', { ascending: false })
 
         if (error) throw error
