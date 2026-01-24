@@ -43,6 +43,11 @@ export default function AuthModal({ isOpen, onClose }) {
             return
         }
 
+        if (!supabase) {
+            setError('Authentication service not configured')
+            return
+        }
+
         setLoading(true)
         setError('')
 
@@ -74,6 +79,11 @@ export default function AuthModal({ isOpen, onClose }) {
         }
         if (password.length < 6) {
             setError('Password must be at least 6 characters')
+            return
+        }
+
+        if (!supabase) {
+            setError('Authentication service not configured')
             return
         }
 
