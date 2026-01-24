@@ -2,8 +2,6 @@
 
 Wardrobe AI is an intelligent fashion companion that helps you organize your closet, discover new styles, and solve the daily "what should I wear?" dilemma through the power of AI and sustainable shopping.
 
-![Wardrobe AI Banner](/public/moods/party.png) *Note: Replace with actual app screenshot*
-
 ## 🚀 Problem Statement
 
 In today's fast-paced world, fashion consumers face three critical problems:
