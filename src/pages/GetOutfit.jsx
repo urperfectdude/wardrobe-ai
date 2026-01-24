@@ -114,7 +114,7 @@ export default function GetOutfit() {
     const [wardrobeItems, setWardrobeItems] = useState([])
     const [shopProducts, setShopProducts] = useState([])
     const [loading, setLoading] = useState(true)
-    const [selectedMood, setSelectedMood] = useState(moodFromUrl || '')
+    const [selectedMood, setSelectedMood] = useState(moodFromUrl || 'party')
     const [outfit, setOutfit] = useState(null)
     const [isGenerating, setIsGenerating] = useState(false)
     const [outfitDescription, setOutfitDescription] = useState('')
@@ -416,7 +416,8 @@ export default function GetOutfit() {
             </button>
 
             {/* Warning if not enough items */}
-            {!hasItems && (
+            {/* Warning if no wardrobe items and source includes closet */}
+            {(source !== 'shop' && wardrobeItems.length === 0) && (
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -430,7 +431,7 @@ export default function GetOutfit() {
                     }}
                 >
                     <Sparkles size={28} style={{ color: 'hsl(var(--accent))', marginBottom: '0.75rem' }} />
-                    <h3 style={{ marginBottom: '0.375rem', fontSize: '1rem' }}>No Items Available</h3>
+                    <h3 style={{ marginBottom: '0.375rem', fontSize: '1rem' }}>No Items in Closet</h3>
                     <p className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>
                         Add items to your closet or check the shop
                     </p>
