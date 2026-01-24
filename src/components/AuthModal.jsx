@@ -93,8 +93,14 @@ export default function AuthModal({ isOpen, onClose }) {
 
             if (error) throw error
 
-            setSuccess('Check your email to confirm your account!')
-            resetForm()
+            // If session exists, user is auto-confirmed (email verification disabled)
+            if (data?.session) {
+                onClose()  // Close modal, AuthContext will pick up the session
+            } else {
+                // Email verification is enabled, show confirmation message
+                setSuccess('Check your email to confirm your account!')
+                resetForm()
+            }
         } catch (err) {
             setError(err.message || 'Failed to sign up')
         } finally {
