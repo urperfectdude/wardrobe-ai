@@ -166,7 +166,20 @@ h4 {
 
 @media (min-width: 768px) {
   .container {
+    max-width: 720px;
     padding: 0 var(--spacing-xl);
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 960px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1200px;
   }
 }
 
