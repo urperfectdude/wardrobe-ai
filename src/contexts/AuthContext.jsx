@@ -45,22 +45,28 @@ export function AuthProvider({ children }) {
     }
 
     useEffect(() => {
+        let isMounted = true
+
         // Get initial session
         async function initSession() {
             try {
                 const currentSession = await getSession()
+                if (!isMounted) return
+
                 setSession(currentSession)
                 const currentUser = currentSession?.user || null
                 setUser(currentUser)
 
                 if (currentUser) {
                     const profile = await fetchProfile(currentUser.id)
-                    setUserProfile(profile)
+                    if (isMounted) setUserProfile(profile)
                 }
             } catch (error) {
+                // Ignore AbortError from React StrictMode remounts
+                if (error?.name === 'AbortError') return
                 console.error('Error getting session:', error)
             } finally {
-                setLoading(false)
+                if (isMounted) setLoading(false)
             }
         }
 
@@ -68,14 +74,21 @@ export function AuthProvider({ children }) {
 
         // Listen for auth changes
         const { data: { subscription } } = onAuthStateChange(async (event, newSession) => {
+            if (!isMounted) return
             console.log('Auth state changed:', event)
             setSession(newSession)
             const newUser = newSession?.user || null
             setUser(newUser)
 
             if (newUser) {
-                const profile = await fetchProfile(newUser.id)
-                setUserProfile(profile)
+                try {
+                    const profile = await fetchProfile(newUser.id)
+                    if (isMounted) setUserProfile(profile)
+                } catch (error) {
+                    if (error?.name !== 'AbortError') {
+                        console.error('Error fetching profile:', error)
+                    }
+                }
             } else {
                 setUserProfile(null)
             }
@@ -84,6 +97,7 @@ export function AuthProvider({ children }) {
         })
 
         return () => {
+            isMounted = false
             subscription?.unsubscribe()
         }
     }, [])
