@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase'
 
 export async function getWardrobeItems() {
     try {
+        if (!supabase) return []
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return []
 
@@ -129,6 +130,7 @@ export async function deleteWardrobeItem(id) {
 
 export async function getProducts(filters = {}) {
     try {
+        if (!supabase) return []
         let query = supabase.from('products').select('*')
 
         if (filters.platforms && filters.platforms.length > 0) {
@@ -300,6 +302,7 @@ export function compressImage(base64, maxWidth = 400) {
 
 export async function saveOutfit(outfit, isSaved = false, isPublic = false) {
     try {
+        if (!supabase) return null
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
             // Allow saving loosely for guests in local state if needed (not implemented here) or return fake
@@ -347,6 +350,7 @@ export async function markOutfitAsSaved(outfitId, isPublic = false) {
 // Fetch only generated history (not explicitly saved/favorited)
 export async function getRecentOutfits() {
     try {
+        if (!supabase) return []
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return []
 
@@ -369,6 +373,7 @@ export async function getRecentOutfits() {
 // Fetch explicitly saved/favorited outfits
 export async function getSavedOutfits() {
     try {
+        if (!supabase) return []
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return []
 
@@ -434,6 +439,7 @@ export async function deleteOutfit(outfitId) {
 
 export async function sendPurchaseRequest(itemId, sellerId, offerPrice, message = '') {
     try {
+        if (!supabase) throw new Error('Service not configured')
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) throw new Error('Must be logged in to make offers')
 
@@ -459,6 +465,7 @@ export async function sendPurchaseRequest(itemId, sellerId, offerPrice, message 
 
 export async function getPurchaseRequests() {
     try {
+        if (!supabase) return []
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return []
 

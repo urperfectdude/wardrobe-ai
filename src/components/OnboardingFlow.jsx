@@ -36,6 +36,11 @@ export default function OnboardingFlow({ isOpen, onClose, onComplete }) {
         setLoading(true)
         setError('')
         try {
+            if (!supabase) {
+                setError('Authentication service not configured')
+                setLoading(false)
+                return
+            }
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: { redirectTo: window.location.origin }
@@ -58,6 +63,11 @@ export default function OnboardingFlow({ isOpen, onClose, onComplete }) {
         setError('')
 
         try {
+            if (!supabase) {
+                setError('Authentication service not configured')
+                setLoading(false)
+                return
+            }
             if (authMode === 'login') {
                 const { data, error } = await supabase.auth.signInWithPassword({ email, password })
                 if (error) throw error
@@ -105,6 +115,11 @@ export default function OnboardingFlow({ isOpen, onClose, onComplete }) {
     const handleFinalSave = async () => {
         setLoading(true)
         try {
+            if (!supabase) {
+                setStep(STEPS.DONE)
+                setLoading(false)
+                return
+            }
             const { data: { user } } = await supabase.auth.getUser()
             if (user) {
                 await supabase.from('user_profiles').upsert({
