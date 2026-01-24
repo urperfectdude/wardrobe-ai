@@ -1,0 +1,497 @@
+import { useState, useEffect } from 'react'
+import { User, Camera, AtSign, Heart, LogOut, Check, Loader2, Settings, ChevronRight, Palette, Shirt } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import { supabase } from '../lib/supabase'
+import { getPreferences, savePreferences, getPurchaseRequests, updatePurchaseRequest } from '../utils/storage'
+import { EXISTING_CATEGORY4, EXISTING_COLORS } from '../utils/openaiAnalysis'
+import OnboardingFlow from '../components/OnboardingFlow'
+
+const BODY_TYPES = ['Slim', 'Athletic', 'Regular', 'Curvy', 'Plus Size']
+
+export default function Profile() {
+    const navigate = useNavigate()
+    const { user, userProfile, loading: authLoading, signOut, refreshProfile } = useAuth()
+    const [showOnboarding, setShowOnboarding] = useState(false)
+    const [editMode, setEditMode] = useState(false)
+    const [saving, setSaving] = useState(false)
+    const [requests, setRequests] = useState([])
+    const [loadingRequests, setLoadingRequests] = useState(true)
+    const [activeTab, setActiveTab] = useState('selling') // 'selling' or 'buying'
+
+    const [profile, setProfile] = useState({
+        name: '',
+        username: ''
+    })
+
+    const [preferences, setPreferences] = useState({
+        favoriteStyles: [],
+        favoriteColors: [],
+        bodyType: '',
+        avoidColors: [],
+        budget: 'medium'
+    })
+
+    useEffect(() => {
+        if (userProfile) {
+            setProfile({
+                name: userProfile.name || '',
+                username: userProfile.username || ''
+            })
+        }
+        loadPreferences()
+        loadRequests()
+    }, [userProfile])
+
+    const loadRequests = async () => {
+        try {
+            const data = await getPurchaseRequests()
+            setRequests(data)
+        } catch (error) {
+            console.error('Error loading requests:', error)
+        } finally {
+            setLoadingRequests(false)
+        }
+    }
+
+    const loadPreferences = async () => {
+        try {
+            const prefs = await getPreferences()
+            if (prefs) {
+                setPreferences(prefs)
+            }
+        } catch (error) {
+            console.error('Error loading preferences:', error)
+        }
+    }
+
+    const handleSaveProfile = async () => {
+        setSaving(true)
+        try {
+            await supabase.from('user_profiles').upsert({
+                user_id: user.id,
+                name: profile.name,
+                username: profile.username
+            })
+            await savePreferences(preferences)
+            await refreshProfile()
+            setEditMode(false)
+        } catch (error) {
+            console.error('Error saving profile:', error)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleSignOut = async () => {
+        await signOut()
+        navigate('/')
+    }
+
+    const togglePreference = (type, value) => {
+        setPreferences(prev => {
+            const current = prev[type] || []
+            const updated = current.includes(value)
+                ? current.filter(v => v !== value)
+                : [...current, value]
+            return { ...prev, [type]: updated }
+        })
+    }
+
+    const handleUpdateRequestStatus = async (requestId, status) => {
+        const qilinLink = status === 'accepted' ? 'https://qilin.in/sell' : null
+        try {
+            await updatePurchaseRequest(requestId, status, qilinLink)
+            loadRequests()
+        } catch (error) {
+            console.error('Failed to update request:', error)
+        }
+    }
+
+    const displayName = userProfile?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
+    const avatarUrl = userProfile?.avatar_url || user?.user_metadata?.avatar_url
+    const initial = displayName?.[0]?.toUpperCase() || 'U'
+
+    if (authLoading) {
+        return (
+            <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+                <Loader2 size={32} className="animate-spin" style={{ color: 'hsl(var(--accent))' }} />
+            </div>
+        )
+    }
+
+    // Not logged in state
+    if (!user) {
+        return (
+            <div className="container">
+                <div style={{ marginBottom: '1.5rem' }}>
+                    <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>Profile</h1>
+                    <p className="text-muted text-sm">Sign in to save preferences</p>
+                </div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{
+                        background: 'hsl(var(--card))',
+                        borderRadius: 'var(--radius-xl)',
+                        padding: '2rem',
+                        textAlign: 'center',
+                        border: '1px solid hsl(var(--border))'
+                    }}
+                >
+                    <User size={48} style={{ color: 'hsl(var(--muted-foreground))', marginBottom: '1rem' }} />
+                    <h2 style={{ fontSize: '1.125rem', marginBottom: '0.5rem' }}>Not signed in</h2>
+                    <p className="text-muted text-sm" style={{ marginBottom: '1.25rem' }}>
+                        Sign in to save your style preferences and access your closet across devices
+                    </p>
+                    <button
+                        className="btn btn-primary"
+                        onClick={() => setShowOnboarding(true)}
+                    >
+                        Sign In
+                    </button>
+                </motion.div>
+
+                <AnimatePresence>
+                    {showOnboarding && (
+                        <OnboardingFlow
+                            isOpen={showOnboarding}
+                            onClose={() => setShowOnboarding(false)}
+                            onComplete={() => setShowOnboarding(false)}
+                        />
+                    )}
+                </AnimatePresence>
+            </div>
+        )
+    }
+
+    return (
+        <div className="container">
+            <div style={{ marginBottom: '1.5rem' }}>
+                <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>Profile</h1>
+                <p className="text-muted text-sm">Manage your account & preferences</p>
+            </div>
+
+            {/* Profile Card */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{
+                    background: 'hsl(var(--card))',
+                    borderRadius: 'var(--radius-xl)',
+                    padding: '1.25rem',
+                    marginBottom: '1rem',
+                    border: '1px solid hsl(var(--border))'
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                    {avatarUrl ? (
+                        <img src={avatarUrl} alt="Profile" style={{ width: '56px', height: '56px', borderRadius: '50%' }} />
+                    ) : (
+                        <div style={{
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '50%',
+                            background: 'hsl(var(--accent))',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.5rem',
+                            fontWeight: 600
+                        }}>
+                            {initial}
+                        </div>
+                    )}
+                    <div style={{ flex: 1 }}>
+                        {editMode ? (
+                            <input
+                                type="text"
+                                className="input"
+                                value={profile.name}
+                                onChange={(e) => setProfile(prev => ({ ...prev, name: e.target.value }))}
+                                placeholder="Your name"
+                                style={{ marginBottom: '0.5rem' }}
+                            />
+                        ) : (
+                            <h2 style={{ fontSize: '1.125rem', margin: 0 }}>{displayName}</h2>
+                        )}
+                        {editMode ? (
+                            <div style={{ position: 'relative' }}>
+                                <AtSign size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'hsl(var(--muted-foreground))' }} />
+                                <input
+                                    type="text"
+                                    className="input"
+                                    value={profile.username}
+                                    onChange={(e) => setProfile(prev => ({ ...prev, username: e.target.value.toLowerCase().replace(/\s/g, '') }))}
+                                    placeholder="username"
+                                    style={{ paddingLeft: '2rem' }}
+                                />
+                            </div>
+                        ) : (
+                            <p className="text-muted text-sm" style={{ margin: 0 }}>
+                                {userProfile?.username ? `@${userProfile.username}` : user?.email}
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                {editMode ? (
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setEditMode(false)}>
+                            Cancel
+                        </button>
+                        <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSaveProfile} disabled={saving}>
+                            {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                            Save
+                        </button>
+                    </div>
+                ) : (
+                    <button className="btn btn-outline w-full" onClick={() => setEditMode(true)}>
+                        Edit Profile
+                    </button>
+                )}
+            </motion.div>
+
+            {/* Style Preferences */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                style={{
+                    background: 'hsl(var(--card))',
+                    borderRadius: 'var(--radius-xl)',
+                    padding: '1.25rem',
+                    marginBottom: '1rem',
+                    border: '1px solid hsl(var(--border))'
+                }}
+            >
+                <h3 style={{ fontSize: '0.9375rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                    <Heart size={16} style={{ color: 'hsl(var(--accent))' }} />
+                    Style Preferences
+                </h3>
+
+                {/* Body Type */}
+                <div style={{ marginBottom: '1rem' }}>
+                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Body Type</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                        {BODY_TYPES.map(type => (
+                            <button
+                                key={type}
+                                type="button"
+                                className={`chip chip-outline ${preferences.bodyType === type ? 'active' : ''}`}
+                                onClick={() => setPreferences(prev => ({ ...prev, bodyType: type }))}
+                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                            >
+                                {preferences.bodyType === type && <Check size={10} />}
+                                {type}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Favorite Styles */}
+                <div style={{ marginBottom: '1rem' }}>
+                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Favorite Styles</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '80px', overflowY: 'auto' }}>
+                        {EXISTING_CATEGORY4.slice(0, 15).map(style => (
+                            <button
+                                key={style}
+                                type="button"
+                                className={`chip chip-outline ${preferences.favoriteStyles?.includes(style) ? 'active' : ''}`}
+                                onClick={() => togglePreference('favoriteStyles', style)}
+                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                            >
+                                {style}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Favorite Colors */}
+                <div style={{ marginBottom: '1rem' }}>
+                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Favorite Colors</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                        {EXISTING_COLORS.slice(0, 12).map(color => (
+                            <button
+                                key={color}
+                                type="button"
+                                className={`chip chip-outline ${preferences.favoriteColors?.includes(color) ? 'active' : ''}`}
+                                onClick={() => togglePreference('favoriteColors', color)}
+                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                            >
+                                {color}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Budget */}
+                <div style={{ marginBottom: '1rem' }}>
+                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Budget Range</label>
+                    <div style={{ display: 'flex', gap: '0.375rem' }}>
+                        {[{ id: 'low', label: '₹ Budget' }, { id: 'medium', label: '₹₹ Mid' }, { id: 'high', label: '₹₹₹ Premium' }].map(b => (
+                            <button
+                                key={b.id}
+                                type="button"
+                                className={`chip chip-outline ${preferences.budget === b.id ? 'active' : ''}`}
+                                onClick={() => setPreferences(prev => ({ ...prev, budget: b.id }))}
+                                style={{ flex: 1, fontSize: '0.625rem', padding: '0.375rem', minHeight: '30px' }}
+                            >
+                                {b.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <button
+                    className="btn btn-primary w-full"
+                    onClick={handleSaveProfile}
+                    disabled={saving}
+                >
+                    {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                    Save Preferences
+                </button>
+            </motion.div>
+
+            {/* Purchase Requests Section */}
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                style={{
+                    background: 'hsl(var(--card))',
+                    borderRadius: 'var(--radius-xl)',
+                    padding: '1.25rem',
+                    marginBottom: '1rem',
+                    border: '1px solid hsl(var(--border))'
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <h3 style={{ fontSize: '0.9375rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <ShoppingBag size={16} style={{ color: 'hsl(var(--accent))' }} />
+                        Marketplace Offers
+                    </h3>
+                    <div style={{ display: 'flex', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-md)', padding: '2px' }}>
+                        <button
+                            onClick={() => setActiveTab('selling')}
+                            style={{
+                                padding: '4px 12px', fontSize: '0.6875rem', fontWeight: 600, border: 'none',
+                                borderRadius: 'var(--radius-sm)', background: activeTab === 'selling' ? 'white' : 'transparent',
+                                color: activeTab === 'selling' ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Selling
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('buying')}
+                            style={{
+                                padding: '4px 12px', fontSize: '0.6875rem', fontWeight: 600, border: 'none',
+                                borderRadius: 'var(--radius-sm)', background: activeTab === 'buying' ? 'white' : 'transparent',
+                                color: activeTab === 'buying' ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Buying
+                        </button>
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {loadingRequests ? (
+                        <div style={{ padding: '2rem', textAlign: 'center' }}>
+                            <Loader2 size={24} className="animate-spin" style={{ color: 'hsl(var(--muted-foreground))' }} />
+                        </div>
+                    ) : (
+                        requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).length === 0 ? (
+                            <p style={{ textAlign: 'center', color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem', padding: '1.5rem 0' }}>
+                                No {activeTab} offers yet
+                            </p>
+                        ) : (
+                            requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).map(request => (
+                                <div key={request.id} style={{
+                                    padding: '0.75rem',
+                                    background: 'white',
+                                    borderRadius: 'var(--radius-lg)',
+                                    border: '1px solid hsl(var(--border))'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                            <div style={{ fontSize: '0.8125rem', fontWeight: 700 }}>₹{request.offer_price}</div>
+                                            <span style={{
+                                                fontSize: '0.5rem', fontWeight: 700, padding: '2px 4px', borderRadius: '4px',
+                                                background: request.status === 'pending' ? 'hsl(var(--secondary))' :
+                                                    request.status === 'accepted' ? 'hsl(var(--green-100))' : 'hsl(var(--destructive) / 0.1)',
+                                                color: request.status === 'accepted' ? 'hsl(var(--green-600))' :
+                                                    request.status === 'declined' ? 'hsl(var(--destructive))' : 'hsl(var(--muted-foreground))',
+                                                textTransform: 'uppercase'
+                                            }}>
+                                                {request.status}
+                                            </span>
+                                        </div>
+                                        <span style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))' }}>
+                                            {new Date(request.created_at).toLocaleDateString()}
+                                        </span>
+                                    </div>
+
+                                    {request.message && (
+                                        <p style={{ fontSize: '0.75rem', margin: '0 0 0.75rem', color: 'hsl(var(--foreground))', fontStyle: 'italic' }}>
+                                            "{request.message}"
+                                        </p>
+                                    )}
+
+                                    {activeTab === 'selling' && request.status === 'pending' && (
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <button
+                                                className="btn btn-primary btn-sm"
+                                                style={{ flex: 1, fontSize: '0.6875rem', minHeight: '32px' }}
+                                                onClick={() => handleUpdateRequestStatus(request.id, 'accepted')}
+                                            >
+                                                Accept & Sell
+                                            </button>
+                                            <button
+                                                className="btn btn-outline btn-sm"
+                                                style={{ flex: 1, fontSize: '0.6875rem', minHeight: '32px' }}
+                                                onClick={() => handleUpdateRequestStatus(request.id, 'declined')}
+                                            >
+                                                Decline
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {activeTab === 'buying' && request.status === 'accepted' && (
+                                        <a
+                                            href={request.qilin_link || 'https://qilin.in'}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn btn-primary btn-sm w-full"
+                                            style={{ fontSize: '0.6875rem', minHeight: '32px' }}
+                                        >
+                                            Complete Purchase on Qilin.in
+                                        </a>
+                                    )}
+                                </div>
+                            ))
+                        )
+                    )}
+                </div>
+            </motion.div>
+
+            {/* Sign Out */}
+            <motion.button
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.25 }}
+                className="btn btn-outline w-full"
+                onClick={handleSignOut}
+                style={{ color: 'hsl(var(--destructive))' }}
+            >
+                <LogOut size={16} />
+                Sign Out
+            </motion.button>
+        </div>
+    )
+}

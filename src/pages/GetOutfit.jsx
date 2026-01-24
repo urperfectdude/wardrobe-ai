@@ -1,19 +1,109 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Wand2, Shuffle, ShoppingBag, Sparkles, ArrowRight, X, Heart, Check, ExternalLink, Loader2, Shirt, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Wand2, Shuffle, ShoppingBag, Sparkles, ArrowRight, X, Heart, Check, ExternalLink, Loader2, Shirt, Settings, Edit2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getWardrobeItems, getProducts, savePreferences, getPreferences } from '../utils/storage'
+import { getWardrobeItems, getProducts, savePreferences, getPreferences, saveOutfit, markOutfitAsSaved, getRecentOutfits, getSavedOutfits } from '../utils/storage'
 import { generateOutfit, OCCASION_CATEGORIES } from '../utils/outfitMatcher'
-import { EXISTING_CATEGORY4, EXISTING_COLORS } from '../utils/openaiAnalysis'
+import { EXISTING_CATEGORY4, EXISTING_COLORS, generateOutfitDescription } from '../utils/openaiAnalysis'
+import { useAuth } from '../contexts/AuthContext'
+import { ChevronDown, ChevronUp, History, Bookmark } from 'lucide-react'
 
-const OCCASIONS = [
-    { id: 'party', emoji: '🎉', label: 'Party' },
-    { id: 'office', emoji: '💼', label: 'Office' },
-    { id: 'casual', emoji: '☕', label: 'Casual' },
-    { id: 'date', emoji: '💝', label: 'Date Night' },
-    { id: 'wedding', emoji: '💒', label: 'Wedding' },
-    { id: 'vacation', emoji: '🏖️', label: 'Vacation' }
+const MOODS = [
+    { id: 'party', label: 'Party' },
+    { id: 'office', label: 'Office' },
+    { id: 'casual', label: 'Casual' },
+    { id: 'date', label: 'Date Night' },
+    { id: 'wedding', label: 'Wedding' },
+    { id: 'vacation', label: 'Vacation' },
+    { id: 'gym', label: 'Gym' },
+    { id: 'brunch', label: 'Brunch' }
 ]
+
+const BODY_TYPES = ['Slim', 'Athletic', 'Regular', 'Curvy', 'Plus Size']
+
+// Helper Components
+const OutfitList = ({ outfits, title, icon: Icon, emptyMsg, onOutfitClick }) => (
+    <div style={{ marginBottom: '2rem' }}>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Icon size={16} /> {title}
+        </h3>
+        {outfits.length === 0 ? (
+            <p className="text-muted text-sm italic">{emptyMsg}</p>
+        ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {outfits.map((histOutfit) => (
+                    <HistoryCard
+                        key={histOutfit.id}
+                        outfit={histOutfit}
+                        onClick={() => onOutfitClick(histOutfit)}
+                    />
+                ))}
+            </div>
+        )}
+    </div>
+)
+
+const HistoryCard = ({ outfit, onClick }) => {
+    const [expanded, setExpanded] = useState(false)
+
+    return (
+        <div
+            className="card"
+            style={{ padding: '0.75rem', cursor: 'pointer' }}
+            onClick={(e) => {
+                if (e.target.closest('.expand-btn')) return
+                onClick()
+            }}
+        >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, textTransform: 'capitalize' }}>
+                        {outfit.mood} Outfit
+                    </span>
+                    {outfit.is_saved && <Bookmark size={12} style={{ fill: "currentColor", color: "hsl(var(--accent))" }} />}
+                </div>
+
+                <span style={{ fontSize: '0.75rem', color: 'hsl(var(--muted-foreground))' }}>
+                    {new Date(outfit.created_at).toLocaleDateString()}
+                </span>
+            </div>
+
+            {/* Preview Images */}
+            <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
+                {Array.isArray(outfit.items) && outfit.items.slice(0, 4).map((item, idx) => (
+                    <img
+                        key={idx}
+                        src={item.image}
+                        alt="Item"
+                        style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-sm)', objectFit: 'cover', flexShrink: 0 }}
+                    />
+                ))}
+            </div>
+
+            {/* Expandable Description */}
+            {outfit.description && (
+                <div style={{ borderTop: '1px solid hsl(var(--border))', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                    <button
+                        className="expand-btn"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            setExpanded(!expanded)
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', color: 'hsl(var(--accent))', background: 'none', border: 'none', padding: 0, fontWeight: 600 }}
+                    >
+                        <Sparkles size={10} />
+                        {expanded ? "Hide AI Analysis" : "Show AI Analysis"}
+                    </button>
+                    {expanded && (
+                        <p style={{ fontSize: '0.75rem', color: 'hsl(var(--muted-foreground))', marginTop: '0.375rem', lineHeight: '1.4' }}>
+                            {outfit.description}
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
 
 export default function GetOutfit() {
     const [searchParams] = useSearchParams()
@@ -23,9 +113,12 @@ export default function GetOutfit() {
     const [wardrobeItems, setWardrobeItems] = useState([])
     const [shopProducts, setShopProducts] = useState([])
     const [loading, setLoading] = useState(true)
-    const [selectedOccasion, setSelectedOccasion] = useState(moodFromUrl || '')
+    const [selectedMood, setSelectedMood] = useState(moodFromUrl || '')
     const [outfit, setOutfit] = useState(null)
     const [isGenerating, setIsGenerating] = useState(false)
+    const [outfitDescription, setOutfitDescription] = useState('')
+    const [isDescriptionOpen, setIsDescriptionOpen] = useState(false)
+    const [activeOutfitId, setActiveOutfitId] = useState(null)
     const [showPreferences, setShowPreferences] = useState(showPreferencesFromUrl)
 
     // Source toggle: 'closet' or 'shop' or 'both'
@@ -36,22 +129,32 @@ export default function GetOutfit() {
         favoriteStyles: [],
         favoriteColors: [],
         bodyType: '',
-        preferredOccasions: []
+        avoidColors: [],
+        budget: 'medium'
     })
     const [savingPrefs, setSavingPrefs] = useState(false)
+    const [recentOutfits, setRecentOutfits] = useState([])
+    const [savedOutfits, setSavedOutfits] = useState([])
+    const [isPublic, setIsPublic] = useState(false)
+    const [isSavingOutfit, setIsSavingOutfit] = useState(false)
+    const { user } = useAuth()
 
     // Load wardrobe items and shop products
     useEffect(() => {
         async function loadData() {
             try {
-                const [items, products, savedPrefs] = await Promise.all([
+                const [items, products, savedPrefs, recent, saved] = await Promise.all([
                     getWardrobeItems().catch(() => []),
                     getProducts().catch(() => []),
-                    getPreferences().catch(() => null)
+                    getPreferences().catch(() => null),
+                    getRecentOutfits().catch(() => []),
+                    getSavedOutfits().catch(() => [])
                 ])
-                console.log('Loaded wardrobe:', items.length, 'Shop products:', products.length)
                 setWardrobeItems(items)
                 setShopProducts(products)
+                setRecentOutfits(recent)
+                setSavedOutfits(saved)
+
                 if (savedPrefs) {
                     setPreferences(savedPrefs)
                 }
@@ -64,25 +167,43 @@ export default function GetOutfit() {
         loadData()
     }, [])
 
+    // Handler for mood change - resets UI as requested
+    const handleMoodChange = (moodId) => {
+        setSelectedMood(moodId)
+        setOutfit(null) // Reset current view
+        setOutfitDescription('')
+        setActiveOutfitId(null)
+    }
+
+    const refreshLists = async () => {
+        const [recent, saved] = await Promise.all([
+            getRecentOutfits(),
+            getSavedOutfits()
+        ])
+        setRecentOutfits(recent)
+        setSavedOutfits(saved)
+    }
+
     // Auto-generate outfit when mood is passed via URL
     useEffect(() => {
         if (moodFromUrl && !loading && (wardrobeItems.length >= 1 || shopProducts.length >= 1)) {
-            setSelectedOccasion(moodFromUrl)
+            setSelectedMood(moodFromUrl)
             setTimeout(() => {
                 generateOutfitWithProducts(moodFromUrl)
             }, 300)
         }
     }, [moodFromUrl, loading, wardrobeItems.length, shopProducts.length])
 
-    const generateOutfitWithProducts = useCallback((occasion) => {
+    const generateOutfitWithProducts = useCallback((mood) => {
         setIsGenerating(true)
+        setOutfit(null) // Clear previous while generating
 
-        setTimeout(() => {
+        setTimeout(async () => {
             let outfitItems = []
 
             // Get items based on source toggle
             if (source === 'closet' || source === 'both') {
-                const closetSuggestions = generateOutfit(wardrobeItems, occasion, 1)
+                const closetSuggestions = generateOutfit(wardrobeItems, mood, 1)
                 if (closetSuggestions[0]) {
                     outfitItems = closetSuggestions[0].items.map(item => ({
                         ...item,
@@ -92,56 +213,56 @@ export default function GetOutfit() {
             }
 
             if (source === 'shop' || source === 'both') {
-                // Get shop products matching occasion
-                const occasionInfo = OCCASION_CATEGORIES[occasion]
+                const occasionInfo = OCCASION_CATEGORIES[mood]
                 let matchingProducts = shopProducts
 
                 if (occasionInfo) {
                     matchingProducts = shopProducts.filter(product => {
-                        const productStyle = (product.style || '').toLowerCase()
-                        const productColor = (product.color || '').toLowerCase()
-
-                        const styleMatch = occasionInfo.styles?.some(s =>
-                            productStyle.includes(s.toLowerCase())
+                        const matchesStyle = occasionInfo.styles?.some(
+                            style => product.category4?.toLowerCase().includes(style.toLowerCase())
                         )
-                        const colorMatch = occasionInfo.colors?.includes('any') ||
-                            occasionInfo.colors?.some(c => productColor.includes(c))
-
-                        return styleMatch || colorMatch
+                        return matchesStyle || Math.random() > 0.7
                     })
                 }
 
-                // If no matching products, use random
                 if (matchingProducts.length === 0) {
                     matchingProducts = shopProducts
                 }
 
-                // Shuffle and pick products
                 const shuffled = [...matchingProducts].sort(() => Math.random() - 0.5)
-                const shopItems = shuffled.slice(0, source === 'shop' ? 3 : 2).map(p => ({
-                    id: p.id,
-                    image: p.image_url || p.image,
-                    title: p.name,
-                    category: p.category,
-                    color: p.color,
-                    source: 'shop',
-                    productUrl: p.product_url,
-                    price: p.price,
-                    platform: p.platform
+                const shopSuggestions = shuffled.slice(0, source === 'shop' ? 4 : 2).map(p => ({
+                    ...p,
+                    source: 'shop'
                 }))
 
-                if (source === 'shop') {
-                    outfitItems = shopItems
-                } else {
-                    // Add shop items to complement closet items
-                    outfitItems = [...outfitItems, ...shopItems]
-                }
+                outfitItems = [...outfitItems, ...shopSuggestions]
             }
 
             if (outfitItems.length > 0) {
-                setOutfit({ items: outfitItems })
+                const newOutfit = {
+                    mood: mood,
+                    items: outfitItems.map(item => ({ ...item, liked: false }))
+                }
+                setOutfit(newOutfit)
+
+                // Get AI Description & Auto-Save to History
+                try {
+                    const desc = await generateOutfitDescription(mood, outfitItems)
+                    setOutfitDescription(desc)
+                    setIsDescriptionOpen(true) // Expand by default
+
+                    // Auto-save to 'Recent' history
+                    const saved = await saveOutfit({ ...newOutfit, description: desc }, false, false)
+                    if (saved) {
+                        setActiveOutfitId(saved.id)
+                        await refreshLists()
+                    }
+                } catch (err) {
+                    console.error("Error in post-generation:", err)
+                }
             } else {
                 setOutfit(null)
+                setOutfitDescription('')
             }
 
             setIsGenerating(false)
@@ -149,13 +270,36 @@ export default function GetOutfit() {
     }, [wardrobeItems, shopProducts, source])
 
     const handleGenerateOutfit = useCallback(() => {
-        if (!selectedOccasion) return
-        generateOutfitWithProducts(selectedOccasion)
-    }, [selectedOccasion, generateOutfitWithProducts])
+        if (!selectedMood) return
+        generateOutfitWithProducts(selectedMood)
+    }, [selectedMood, generateOutfitWithProducts])
 
     const handleShuffle = useCallback(() => {
         handleGenerateOutfit()
     }, [handleGenerateOutfit])
+
+    const handleToggleLike = (itemIdx) => {
+        setOutfit(prev => {
+            if (!prev) return prev
+            const newItems = [...prev.items]
+            newItems[itemIdx] = { ...newItems[itemIdx], liked: !newItems[itemIdx].liked }
+            return { ...prev, items: newItems }
+        })
+    }
+
+    const handleSaveOutfit = async () => {
+        if (!activeOutfitId) return
+        setIsSavingOutfit(true)
+        try {
+            await markOutfitAsSaved(activeOutfitId, isPublic)
+            await refreshLists()
+            // Don't clear outfit, let user see they saved it.
+        } catch (error) {
+            console.error('Failed to save outfit:', error)
+        } finally {
+            setIsSavingOutfit(false)
+        }
+    }
 
     const togglePreference = (type, value) => {
         setPreferences(prev => {
@@ -179,6 +323,14 @@ export default function GetOutfit() {
         }
     }
 
+    const handleOutfitClick = (histOutfit) => {
+        setOutfit({ mood: histOutfit.mood, items: histOutfit.items })
+        setOutfitDescription(histOutfit.description || '')
+        setActiveOutfitId(histOutfit.id)
+        setIsDescriptionOpen(true)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
     const hasItems = wardrobeItems.length >= 1 || shopProducts.length >= 1
 
     if (loading) {
@@ -187,11 +339,6 @@ export default function GetOutfit() {
                 <div style={{ marginBottom: '1.5rem' }}>
                     <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>Get Your Outfit</h1>
                     <p className="text-muted text-sm">Loading...</p>
-                </div>
-                <div className="occasion-grid">
-                    {[...Array(6)].map((_, idx) => (
-                        <div key={idx} className="skeleton" style={{ height: '80px', borderRadius: 'var(--radius-lg)' }} />
-                    ))}
                 </div>
             </div>
         )
@@ -208,7 +355,7 @@ export default function GetOutfit() {
             <div style={{
                 display: 'flex',
                 gap: '0.5rem',
-                marginBottom: '1rem',
+                marginBottom: '0.75rem',
                 background: 'hsl(var(--secondary))',
                 padding: '0.375rem',
                 borderRadius: 'var(--radius-lg)'
@@ -239,6 +386,16 @@ export default function GetOutfit() {
                 </button>
             </div>
 
+            {/* Set Preferences Button - Below Source Toggle */}
+            <button
+                className="btn btn-outline btn-sm w-full"
+                onClick={() => setShowPreferences(true)}
+                style={{ marginBottom: '1rem', gap: '0.375rem' }}
+            >
+                <Settings size={14} />
+                Set Style Preferences
+            </button>
+
             {/* Warning if not enough items */}
             {!hasItems && (
                 <motion.div
@@ -248,9 +405,9 @@ export default function GetOutfit() {
                         background: 'hsl(var(--green-100))',
                         border: '1px solid hsl(var(--accent) / 0.3)',
                         borderRadius: 'var(--radius-xl)',
-                        padding: '1.5rem',
+                        padding: '1.25rem',
                         textAlign: 'center',
-                        marginBottom: '1.5rem'
+                        marginBottom: '1rem'
                     }}
                 >
                     <Sparkles size={28} style={{ color: 'hsl(var(--accent))', marginBottom: '0.75rem' }} />
@@ -269,37 +426,40 @@ export default function GetOutfit() {
                 </motion.div>
             )}
 
-            {/* Occasion Selection */}
+            {/* Mood Selection - Horizontal Scroll */}
             <section style={{ marginBottom: '1rem' }}>
-                <h2 style={{ fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: 600 }}>Select Occasion</h2>
+                <h2 style={{ fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: 600 }}>Select Mood</h2>
                 <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: '0.5rem'
+                    display: 'flex',
+                    gap: '0.5rem',
+                    overflowX: 'auto',
+                    paddingBottom: '0.5rem',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none'
                 }}>
-                    {OCCASIONS.map((occasion) => (
+                    {MOODS.map((mood) => (
                         <motion.button
-                            key={occasion.id}
+                            key={mood.id}
                             whileTap={{ scale: 0.97 }}
-                            onClick={() => setSelectedOccasion(occasion.id)}
+                            onClick={() => handleMoodChange(mood.id)}
                             style={{
-                                padding: '0.75rem 0.5rem',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '0.25rem',
-                                border: selectedOccasion === occasion.id
-                                    ? '2px solid hsl(var(--accent))'
+                                padding: '0.625rem 1rem',
+                                border: selectedMood === mood.id
+                                    ? '2px solid hsl(var(--primary))'
                                     : '1px solid hsl(var(--border))',
-                                borderRadius: 'var(--radius-lg)',
-                                background: selectedOccasion === occasion.id
-                                    ? 'hsl(var(--green-100))'
-                                    : 'hsl(var(--card))',
-                                cursor: 'pointer'
+                                borderRadius: 'var(--radius-full)',
+                                background: selectedMood === mood.id
+                                    ? 'hsl(var(--primary))'
+                                    : 'white',
+                                color: selectedMood === mood.id ? 'white' : 'hsl(var(--foreground))',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                                fontSize: '0.8125rem',
+                                fontWeight: 500,
+                                flexShrink: 0
                             }}
                         >
-                            <span style={{ fontSize: '1.25rem' }}>{occasion.emoji}</span>
-                            <span style={{ fontSize: '0.6875rem', fontWeight: 500 }}>{occasion.label}</span>
+                            {mood.label}
                         </motion.button>
                     ))}
                 </div>
@@ -310,7 +470,7 @@ export default function GetOutfit() {
                 <button
                     className="btn btn-primary w-full"
                     onClick={handleGenerateOutfit}
-                    disabled={!selectedOccasion || isGenerating}
+                    disabled={!selectedMood || isGenerating}
                 >
                     {isGenerating ? (
                         <>
@@ -344,142 +504,313 @@ export default function GetOutfit() {
                         }}>
                             <div style={{
                                 display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                marginBottom: '0.75rem'
+                                flexDirection: 'column',
+                                gap: '0.75rem',
+                                marginBottom: '1rem',
+                                background: 'hsl(var(--secondary) / 0.5)',
+                                padding: '0.75rem',
+                                borderRadius: 'var(--radius-lg)'
                             }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                                    <Sparkles size={14} style={{ color: 'hsl(var(--accent))' }} />
-                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'hsl(var(--accent))' }}>
-                                        AI Suggestion for {OCCASIONS.find(o => o.id === selectedOccasion)?.label}
-                                    </span>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                                        <Sparkles size={14} style={{ color: 'hsl(var(--accent))' }} />
+                                        <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                                            {MOODS.find(o => o.id === outfit.mood)?.label || outfit.mood} Look
+                                        </span>
+                                    </div>
+                                    <button className="btn btn-ghost btn-sm" onClick={handleShuffle} style={{ height: '32px' }}>
+                                        <Shuffle size={14} /> <span style={{ fontSize: '0.75rem' }}>Shuffle</span>
+                                    </button>
                                 </div>
-                                <button className="btn btn-ghost btn-sm" onClick={handleShuffle} style={{ minHeight: '32px', padding: '0.25rem 0.5rem' }}>
-                                    <Shuffle size={14} />
-                                </button>
-                            </div>
 
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.75rem', borderTop: '1px solid hsl(var(--border))' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <label className="toggle" style={{ margin: 0, minHeight: 'auto' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isPublic}
+                                                onChange={(e) => setIsPublic(e.target.checked)}
+                                            />
+                                            <div className="toggle-track" style={{ width: '32px', height: '18px' }}>
+                                                <div className="toggle-thumb" style={{ width: '14px', height: '14px', transform: isPublic ? 'translateX(14px)' : 'none' }}></div>
+                                            </div>
+                                        </label>
+                                        <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>Make Public</span>
+                                    </div>
+
+                                    {activeOutfitId && savedOutfits.find(o => o.id === activeOutfitId) ? (
+                                        <span style={{ fontSize: '0.75rem', color: 'hsl(var(--accent))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                            <Check size={14} /> Saved
+                                        </span>
+                                    ) : (
+                                        <button
+                                            className="btn btn-primary btn-sm"
+                                            onClick={handleSaveOutfit}
+                                            disabled={isSavingOutfit || !activeOutfitId}
+                                            style={{ fontSize: '0.75rem' }}
+                                        >
+                                            {isSavingOutfit ? <Loader2 size={13} className="animate-spin" /> : <Heart size={13} />}
+                                            Save to Favs
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                             <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: `repeat(${Math.min(outfit.items.length, 3)}, 1fr)`,
-                                gap: '0.5rem'
+                                width: '100%',
+                                overflowX: 'auto',
+                                paddingBottom: '0.5rem',
+                                scrollbarWidth: 'none',
+                                msOverflowStyle: 'none'
                             }}>
-                                {outfit.items.map((item, idx) => (
-                                    <motion.div
-                                        key={item.id}
-                                        initial={{ opacity: 0, scale: 0.9 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        transition={{ delay: idx * 0.1 }}
-                                        style={{ position: 'relative' }}
-                                    >
-                                        {/* Clickable if shop item */}
-                                        {item.source === 'shop' && item.productUrl ? (
+                                <div style={{ display: 'flex', gap: '0.75rem', paddingRight: '1rem' }}>
+                                    {outfit.items.map((item, idx) => (
+                                        <motion.div
+                                            key={item.id || idx}
+                                            initial={{ opacity: 0, scale: 0.95 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            transition={{ delay: idx * 0.1 }}
+                                            style={{
+                                                minWidth: '160px',
+                                                width: '180px',
+                                                background: 'white',
+                                                borderRadius: 'var(--radius-lg)',
+                                                overflow: 'hidden',
+                                                border: '1px solid hsl(var(--border))',
+                                                flexShrink: 0
+                                            }}
+                                        >
                                             <a
-                                                href={item.productUrl}
-                                                target="_blank"
+                                                href={item.source === 'shop' ? (item.url || item.product_url) : '#'}
+                                                target={item.source === 'shop' ? "_blank" : undefined}
                                                 rel="noopener noreferrer"
-                                                style={{
-                                                    display: 'block',
-                                                    aspectRatio: '3/4',
-                                                    borderRadius: 'var(--radius-lg)',
-                                                    overflow: 'hidden',
-                                                    position: 'relative',
-                                                    textDecoration: 'none'
+                                                onClick={(e) => {
+                                                    if (item.source !== 'shop') e.preventDefault()
                                                 }}
+                                                style={{ display: 'block', position: 'relative', aspectRatio: '3/4', cursor: item.source === 'shop' ? 'pointer' : 'default' }}
                                             >
                                                 <img
                                                     src={item.image}
-                                                    alt={item.title || 'Item'}
+                                                    alt={item.title || item.name || 'Item'}
                                                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                                 />
-                                                {/* External link icon */}
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    top: '0.25rem',
-                                                    right: '0.25rem',
-                                                    background: 'white',
-                                                    borderRadius: '50%',
-                                                    width: '1.25rem',
-                                                    height: '1.25rem',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    boxShadow: 'var(--shadow-sm)'
-                                                }}>
-                                                    <ExternalLink size={10} />
-                                                </div>
-                                                {/* Bottom info */}
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    bottom: 0,
-                                                    left: 0,
-                                                    right: 0,
-                                                    padding: '0.375rem',
-                                                    background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-                                                    color: 'white'
-                                                }}>
-                                                    <div style={{ fontSize: '0.5rem', fontWeight: 600, background: 'hsl(var(--accent))', display: 'inline-block', padding: '0.0625rem 0.25rem', borderRadius: '4px', marginBottom: '0.125rem' }}>
-                                                        🛒 {item.platform || 'Shop'}
+                                                {/* Badge */}
+                                                {item.source === 'shop' ? (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: '0.5rem',
+                                                        left: '0.5rem',
+                                                        padding: '0.25rem 0.5rem',
+                                                        background: item.platform === 'Myntra' ? '#ff3f6c' :
+                                                            item.platform === 'Ajio' ? '#505050' :
+                                                                item.platform === 'Amazon' ? '#ff9900' :
+                                                                    'hsl(220 60% 50%)',
+                                                        color: 'white',
+                                                        fontSize: '0.5625rem',
+                                                        fontWeight: 700,
+                                                        borderRadius: 'var(--radius-sm)',
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.05em'
+                                                    }}>
+                                                        {item.platform || 'Shop'}
                                                     </div>
-                                                    <div style={{ fontSize: '0.625rem', fontWeight: 500 }}>
-                                                        {item.title}
+                                                ) : (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: '0.5rem',
+                                                        left: '0.5rem',
+                                                        padding: '0.25rem 0.5rem',
+                                                        background: 'hsl(142 71% 45%)',
+                                                        color: 'white',
+                                                        fontSize: '0.5625rem',
+                                                        fontWeight: 700,
+                                                        borderRadius: 'var(--radius-sm)',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.125rem'
+                                                    }}>
+                                                        <Shirt size={10} />
+                                                        My Closet
                                                     </div>
-                                                    {item.price && (
-                                                        <div style={{ fontSize: '0.6875rem', fontWeight: 600 }}>
-                                                            ₹{item.price}
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                )}
+
+                                                {/* Like Button */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        handleToggleLike(idx);
+                                                    }}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        top: '0.5rem',
+                                                        right: '0.5rem',
+                                                        width: '24px',
+                                                        height: '24px',
+                                                        borderRadius: '50%',
+                                                        background: item.liked ? 'hsl(var(--accent))' : 'rgba(255,255,255,0.8)',
+                                                        color: item.liked ? 'white' : 'hsl(var(--muted-foreground))',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        border: 'none',
+                                                        cursor: 'pointer',
+                                                        boxShadow: 'var(--shadow-sm)',
+                                                        zIndex: 2
+                                                    }}
+                                                >
+                                                    <Check size={14} strokeWidth={3} />
+                                                </button>
                                             </a>
-                                        ) : (
-                                            <div style={{
-                                                aspectRatio: '3/4',
-                                                borderRadius: 'var(--radius-lg)',
-                                                overflow: 'hidden',
-                                                position: 'relative'
-                                            }}>
-                                                <img
-                                                    src={item.image}
-                                                    alt={item.title || item.category3 || 'Item'}
-                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                />
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    bottom: 0,
-                                                    left: 0,
-                                                    right: 0,
-                                                    padding: '0.375rem',
-                                                    background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-                                                    color: 'white'
+
+                                            {/* Info Section */}
+                                            <div style={{ padding: '0.625rem' }}>
+                                                <p style={{
+                                                    fontSize: '0.6875rem',
+                                                    fontWeight: 600,
+                                                    margin: 0,
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                    marginBottom: '0.25rem'
                                                 }}>
-                                                    <div style={{ fontSize: '0.5rem', fontWeight: 600, background: 'hsl(142 71% 45%)', display: 'inline-block', padding: '0.0625rem 0.25rem', borderRadius: '4px', marginBottom: '0.125rem' }}>
-                                                        👕 My Closet
+                                                    {item.title || item.name}
+                                                </p>
+
+                                                {/* Price or Category */}
+                                                {item.source === 'shop' && item.price ? (
+                                                    <p style={{ fontSize: '0.75rem', fontWeight: 700, margin: 0, marginBottom: '0.5rem' }}>
+                                                        ₹{item.price.toLocaleString()}
+                                                    </p>
+                                                ) : (
+                                                    <>
+                                                        {(item.category3 || item.category4) && (
+                                                            <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                                                                {item.category3 && (
+                                                                    <span style={{ fontSize: '0.5625rem', padding: '0.125rem 0.375rem', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-sm)', color: 'hsl(var(--muted-foreground))' }}>
+                                                                        {item.category3}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                )}
+
+                                                {/* Action Button */}
+                                                {item.source === 'shop' ? (
+                                                    <a
+                                                        href={item.url || '#'}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="btn btn-primary btn-sm w-full"
+                                                        style={{
+                                                            fontSize: '0.6875rem',
+                                                            minHeight: '32px',
+                                                            gap: '0.25rem'
+                                                        }}
+                                                    >
+                                                        <ExternalLink size={12} />
+                                                        Buy Now
+                                                    </a>
+                                                ) : (
+                                                    <div style={{ display: 'flex', gap: '0.375rem' }}>
+                                                        <a
+                                                            href="https://qilin.in"
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="btn btn-primary btn-sm"
+                                                            style={{
+                                                                flex: 1,
+                                                                fontSize: '0.6875rem',
+                                                                minHeight: '32px'
+                                                            }}
+                                                        >
+                                                            Sell it
+                                                        </a>
+                                                        <button
+                                                            className="btn btn-outline btn-sm"
+                                                            style={{
+                                                                padding: '0.375rem',
+                                                                minHeight: '32px'
+                                                            }}
+                                                        >
+                                                            <Edit2 size={14} />
+                                                        </button>
                                                     </div>
-                                                    <div style={{ fontSize: '0.625rem', fontWeight: 500 }}>
-                                                        {item.title || item.category3 || item.category}
-                                                    </div>
-                                                </div>
+                                                )}
                                             </div>
-                                        )}
-                                    </motion.div>
-                                ))}
+                                        </motion.div>
+                                    ))}
+                                </div>
                             </div>
+
+                            {/* AI Description Section */}
+                            {outfitDescription && (
+                                <div style={{ marginTop: '1rem', borderTop: '1px solid hsl(var(--border))', paddingTop: '0.75rem' }}>
+                                    <button
+                                        onClick={() => setIsDescriptionOpen(!isDescriptionOpen)}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', fontSize: '0.8125rem', fontWeight: 600, color: 'hsl(var(--foreground))', cursor: 'pointer' }}
+                                    >
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <Sparkles size={14} className="text-accent" />
+                                            Why this outfit?
+                                        </span>
+                                        {isDescriptionOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                    </button>
+                                    <AnimatePresence>
+                                        {isDescriptionOpen && (
+                                            <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                style={{ overflow: 'hidden' }}
+                                            >
+                                                <p style={{ fontSize: '0.8125rem', color: 'hsl(var(--muted-foreground))', marginTop: '0.5rem', lineHeight: '1.5' }}>
+                                                    {outfitDescription}
+                                                </p>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            )}
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Empty State */}
+            {/* Empty State / Previous History */}
             {hasItems && !outfit && !isGenerating && (
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="empty-state"
-                >
-                    <Wand2 className="empty-state-icon" />
-                    <h3>Select an occasion</h3>
-                    <p className="text-sm">AI will style you from {source === 'closet' ? 'your closet' : source === 'shop' ? 'shop items' : 'closet + shop'}</p>
-                </motion.div>
+                <div style={{ paddingBottom: '2rem' }}>
+                    {!moodFromUrl && !recentOutfits?.length && !savedOutfits?.length && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="empty-state"
+                        >
+                            <Wand2 className="empty-state-icon" />
+                            <h3>Select a mood</h3>
+                            <p className="text-sm">AI will style you from {source === 'closet' ? 'your closet' : source === 'shop' ? 'shop items' : 'closet + shop'}</p>
+                        </motion.div>
+                    )}
+
+                    {/* Lists */}
+                    <>
+                        <OutfitList
+                            title="Saved Collections"
+                            icon={Heart}
+                            outfits={savedOutfits}
+                            emptyMsg="No favorites yet. Generate looks and save the ones you love!"
+                            onOutfitClick={handleOutfitClick}
+                        />
+
+                        <OutfitList
+                            title="Recent Generations"
+                            icon={History}
+                            outfits={recentOutfits}
+                            emptyMsg="Your styling history will appear here."
+                            onOutfitClick={handleOutfitClick}
+                        />
+                    </>
+                </div>
             )}
 
             {/* Preferences Modal */}
@@ -499,7 +830,7 @@ export default function GetOutfit() {
                             zIndex: 1000,
                             padding: '1rem',
                             overflowY: 'auto',
-                            paddingTop: '3rem',
+                            paddingTop: '2rem',
                             paddingBottom: '6rem'
                         }}
                         onClick={() => setShowPreferences(false)}
@@ -515,11 +846,32 @@ export default function GetOutfit() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                                 <h3 style={{ fontSize: '1.125rem', margin: 0 }}>
                                     <Heart size={18} style={{ color: 'hsl(var(--accent))', marginRight: '0.375rem' }} />
-                                    Your Style Preferences
+                                    Style Preferences
                                 </h3>
                                 <button className="btn btn-icon btn-ghost btn-sm" onClick={() => setShowPreferences(false)}>
                                     <X size={18} />
                                 </button>
+                            </div>
+
+                            {/* Body Type */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                                    Body Type
+                                </label>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                    {BODY_TYPES.map(type => (
+                                        <button
+                                            key={type}
+                                            type="button"
+                                            className={`chip chip-outline ${preferences.bodyType === type ? 'active' : ''}`}
+                                            onClick={() => setPreferences(prev => ({ ...prev, bodyType: type }))}
+                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                                        >
+                                            {preferences.bodyType === type && <Check size={10} />}
+                                            {type}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
                             {/* Favorite Styles */}
@@ -527,8 +879,8 @@ export default function GetOutfit() {
                                 <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
                                     Favorite Styles
                                 </label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '100px', overflowY: 'auto' }}>
-                                    {EXISTING_CATEGORY4.map(style => (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '80px', overflowY: 'auto' }}>
+                                    {EXISTING_CATEGORY4.slice(0, 15).map(style => (
                                         <button
                                             key={style}
                                             type="button"
@@ -549,7 +901,7 @@ export default function GetOutfit() {
                                     Favorite Colors
                                 </label>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                    {EXISTING_COLORS.slice(0, 14).map(color => (
+                                    {EXISTING_COLORS.slice(0, 12).map(color => (
                                         <button
                                             key={color}
                                             type="button"
@@ -563,6 +915,46 @@ export default function GetOutfit() {
                                 </div>
                             </div>
 
+                            {/* Colors to Avoid */}
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                                    Colors to Avoid
+                                </label>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                    {EXISTING_COLORS.slice(0, 12).map(color => (
+                                        <button
+                                            key={color}
+                                            type="button"
+                                            className={`chip chip-outline ${preferences.avoidColors?.includes(color) ? 'active' : ''}`}
+                                            onClick={() => togglePreference('avoidColors', color)}
+                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                                        >
+                                            {color}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Budget */}
+                            <div style={{ marginBottom: '1.25rem' }}>
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                                    Budget Range
+                                </label>
+                                <div style={{ display: 'flex', gap: '0.375rem' }}>
+                                    {[{ id: 'low', label: '₹ Budget' }, { id: 'medium', label: '₹₹ Mid' }, { id: 'high', label: '₹₹₹ Premium' }].map(b => (
+                                        <button
+                                            key={b.id}
+                                            type="button"
+                                            className={`chip chip-outline ${preferences.budget === b.id ? 'active' : ''}`}
+                                            onClick={() => setPreferences(prev => ({ ...prev, budget: b.id }))}
+                                            style={{ flex: 1, fontSize: '0.625rem', padding: '0.375rem', minHeight: '30px' }}
+                                        >
+                                            {b.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             <button
                                 className="btn btn-primary w-full"
                                 onClick={handleSavePreferences}
@@ -571,23 +963,15 @@ export default function GetOutfit() {
                                 {savingPrefs ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
                                 Save Preferences
                             </button>
+
+                            <p style={{ fontSize: '0.6875rem', color: 'hsl(var(--muted-foreground))', textAlign: 'center', marginTop: '0.75rem' }}>
+                                You can also edit these in Profile
+                            </p>
                         </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Preferences Button */}
-            {!showPreferences && (
-                <div style={{ textAlign: 'center', paddingBottom: '1rem' }}>
-                    <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setShowPreferences(true)}
-                    >
-                        <Heart size={14} />
-                        Set Style Preferences
-                    </button>
-                </div>
-            )}
         </div>
     )
 }

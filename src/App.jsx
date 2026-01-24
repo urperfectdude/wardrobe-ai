@@ -5,6 +5,7 @@ import Home from './pages/Home'
 import MyCloset from './pages/MyCloset'
 import GetOutfit from './pages/GetOutfit'
 import Shop from './pages/Shop'
+import Profile from './pages/Profile'
 
 function App() {
     return (
@@ -16,6 +17,7 @@ function App() {
                     <Route path="/closet" element={<MyCloset />} />
                     <Route path="/outfit" element={<GetOutfit />} />
                     <Route path="/shop" element={<Shop />} />
+                    <Route path="/profile" element={<Profile />} />
                 </Routes>
             </main>
         </AuthProvider>
@@ -23,3 +25,4 @@ function App() {
 }
 
 export default App
+

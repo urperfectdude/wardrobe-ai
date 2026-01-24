@@ -1,11 +1,29 @@
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Sparkles, Shirt, Wand2, ShoppingBag, ArrowRight, Upload, Brain, Store, Heart } from 'lucide-react'
-import { motion } from 'framer-motion'
-import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { getPublicOutfits } from '../utils/storage'
+import PublicOutfitModal from '../components/PublicOutfitModal'
 
 export default function Home() {
     const navigate = useNavigate()
-    const [showPreferences, setShowPreferences] = useState(false)
+    const [publicOutfits, setPublicOutfits] = useState([])
+    const [loadingOutfits, setLoadingOutfits] = useState(true)
+    const [selectedOutfit, setSelectedOutfit] = useState(null)
+
+    useEffect(() => {
+        async function fetchOutfits() {
+            try {
+                const outfits = await getPublicOutfits(8)
+                setPublicOutfits(outfits)
+            } catch (error) {
+                console.error('Error fetching public outfits:', error)
+            } finally {
+                setLoadingOutfits(false)
+            }
+        }
+        fetchOutfits()
+    }, [])
 
     const features = [
         {
@@ -26,12 +44,12 @@ export default function Home() {
     ]
 
     const moods = [
-        { id: 'party', emoji: '🎉', label: 'Party', color: 'hsl(350 80% 95%)', accent: 'hsl(350 80% 50%)' },
-        { id: 'office', emoji: '💼', label: 'Office', color: 'hsl(220 60% 95%)', accent: 'hsl(220 60% 45%)' },
-        { id: 'casual', emoji: '☕', label: 'Casual', color: 'hsl(30 60% 95%)', accent: 'hsl(30 60% 45%)' },
-        { id: 'date', emoji: '💝', label: 'Date Night', color: 'hsl(330 80% 95%)', accent: 'hsl(330 80% 50%)' },
-        { id: 'wedding', emoji: '💒', label: 'Wedding', color: 'hsl(45 80% 95%)', accent: 'hsl(45 80% 45%)' },
-        { id: 'vacation', emoji: '🏖️', label: 'Vacation', color: 'hsl(180 60% 95%)', accent: 'hsl(180 60% 40%)' }
+        { id: 'party', label: 'Party', image: '/moods/party.png' },
+        { id: 'office', label: 'Office', image: '/moods/office.png' },
+        { id: 'casual', label: 'Casual', image: '/moods/casual.png' },
+        { id: 'date', label: 'Date Night', image: '/moods/date.png' },
+        { id: 'wedding', label: 'Wedding', image: '/moods/wedding.png' },
+        { id: 'vacation', label: 'Vacation', image: '/moods/vacation.png' }
     ]
 
     const handleMoodSelect = (moodId) => {
@@ -92,8 +110,8 @@ export default function Home() {
                 >
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(2, 1fr)',
-                        gap: '0.75rem'
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '0.5rem'
                     }}>
                         {moods.map((mood, idx) => (
                             <motion.button
@@ -104,41 +122,42 @@ export default function Home() {
                                 whileTap={{ scale: 0.97 }}
                                 onClick={() => handleMoodSelect(mood.id)}
                                 style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    gap: '0.375rem',
-                                    padding: '1.25rem 0.75rem',
-                                    background: mood.color,
-                                    border: `2px solid transparent`,
-                                    borderRadius: 'var(--radius-xl)',
+                                    position: 'relative',
+                                    aspectRatio: '1/1',
+                                    overflow: 'hidden',
+                                    border: 'none',
+                                    borderRadius: 'var(--radius-lg)',
                                     cursor: 'pointer',
-                                    transition: 'all 0.2s ease'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = mood.accent
-                                    e.currentTarget.style.transform = 'translateY(-2px)'
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = 'transparent'
-                                    e.currentTarget.style.transform = 'translateY(0)'
+                                    padding: 0
                                 }}
                             >
-                                <span style={{ fontSize: '2rem' }}>{mood.emoji}</span>
+                                <img
+                                    src={mood.image}
+                                    alt={mood.label}
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover'
+                                    }}
+                                />
+                                {/* Black gradient overlay */}
+                                <div style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.1) 50%, transparent 100%)'
+                                }} />
+                                {/* Label */}
                                 <span style={{
-                                    fontSize: '0.8125rem',
+                                    position: 'absolute',
+                                    bottom: '0.625rem',
+                                    left: '0.5rem',
+                                    right: '0.5rem',
+                                    fontSize: '0.75rem',
                                     fontWeight: 600,
-                                    color: mood.accent
-                                }}>{mood.label}</span>
-                                <span style={{
-                                    fontSize: '0.625rem',
-                                    color: 'hsl(var(--muted-foreground))',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.25rem'
+                                    color: 'white',
+                                    textAlign: 'center'
                                 }}>
-                                    <Wand2 size={10} />
-                                    Get outfit
+                                    {mood.label}
                                 </span>
                             </motion.button>
                         ))}
@@ -173,7 +192,9 @@ export default function Home() {
                 </motion.div>
             </section>
 
-            {/* Features */}
+
+
+            {/* How It Works */}
             <section style={{ padding: '1rem 0' }}>
                 <motion.div
                     initial={{ opacity: 0 }}
@@ -252,6 +273,132 @@ export default function Home() {
                     </Link>
                 </motion.div>
             </section>
+
+            {/* Public Outfits Feed */}
+            {publicOutfits.length > 0 && (
+                <section style={{ padding: '1.5rem 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <h2 style={{ fontSize: '1.125rem', fontWeight: 700, margin: 0 }}>Recent Public Outfits</h2>
+                        <Link to="/outfit" style={{ fontSize: '0.75rem', color: 'hsl(var(--accent))', fontWeight: 600, textDecoration: 'none' }}>View All</Link>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        {publicOutfits.map((outfit) => (
+                            <motion.div
+                                key={outfit.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                style={{
+                                    background: 'hsl(var(--card))',
+                                    border: '1px solid hsl(var(--border))',
+                                    borderRadius: 'var(--radius-xl)',
+                                    padding: '1rem',
+                                    boxShadow: 'var(--shadow-sm)'
+                                }}
+                            >
+                                {/* User Info */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                                    {outfit.user_profiles?.avatar_url ? (
+                                        <img
+                                            src={outfit.user_profiles.avatar_url}
+                                            alt=""
+                                            style={{ width: '32px', height: '32px', borderRadius: '50%' }}
+                                        />
+                                    ) : (
+                                        <div style={{
+                                            width: '32px', height: '32px', borderRadius: '50%',
+                                            background: 'hsl(var(--accent))', color: 'white',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: '0.75rem', fontWeight: 600
+                                        }}>
+                                            {(outfit.user_profiles?.name?.[0] || outfit.user_profiles?.username?.[0] || 'U').toUpperCase()}
+                                        </div>
+                                    )}
+                                    <div style={{ flex: 1 }}>
+                                        <p style={{ fontSize: '0.8125rem', fontWeight: 700, margin: 0 }}>
+                                            {outfit.user_profiles?.name || outfit.user_profiles?.username || 'Anonymous User'}
+                                        </p>
+                                        <p style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
+                                            Created a <span style={{ textTransform: 'capitalize', color: 'hsl(var(--foreground))', fontWeight: 600 }}>{outfit.mood}</span> outfit
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Liked Items Grid */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', marginBottom: '1rem' }}>
+                                    {outfit.items.filter(item => item.liked).slice(0, 4).map((item, i) => (
+                                        <div key={i} style={{
+                                            position: 'relative',
+                                            aspectRatio: '1/1',
+                                            borderRadius: 'var(--radius-lg)',
+                                            overflow: 'hidden',
+                                            border: '1px solid hsl(var(--border))'
+                                        }}>
+                                            <img
+                                                src={item.image}
+                                                alt=""
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                            />
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: 0, left: 0, right: 0,
+                                                padding: '0.375rem',
+                                                background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                                                color: 'white'
+                                            }}>
+                                                <div style={{
+                                                    fontSize: '0.5rem',
+                                                    fontWeight: 700,
+                                                    background: item.source === 'closet' ? 'hsl(142 71% 45%)' : 'hsl(220 60% 50%)',
+                                                    display: 'inline-block',
+                                                    padding: '1px 4px',
+                                                    borderRadius: '2px',
+                                                    marginBottom: '2px'
+                                                }}>
+                                                    {item.source === 'closet' ? 'PRELOVED' : (item.platform || 'SHOP')}
+                                                </div>
+                                                <div style={{ fontSize: '0.625rem', fontWeight: 500 }}>
+                                                    {item.title || item.name}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Main Actions */}
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button
+                                        className="btn btn-outline btn-sm"
+                                        style={{ flex: 1, fontSize: '0.75rem', minHeight: '36px' }}
+                                        onClick={() => navigate(`/outfit?mood=${outfit.mood}`)}
+                                    >
+                                        Try Similar
+                                    </button>
+                                    <button
+                                        className="btn btn-primary btn-sm"
+                                        style={{ flex: 1, fontSize: '0.75rem', minHeight: '36px' }}
+                                        onClick={() => setSelectedOutfit(outfit)}
+                                    >
+                                        View Details
+                                    </button>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {/* Public Outfit Detail Modal */}
+            <AnimatePresence>
+                {selectedOutfit && (
+                    <PublicOutfitModal
+                        isOpen={!!selectedOutfit}
+                        onClose={() => setSelectedOutfit(null)}
+                        outfit={selectedOutfit}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     )
 }

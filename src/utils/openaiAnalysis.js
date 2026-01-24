@@ -216,3 +216,43 @@ function getFallbackAnalysis() {
         issue: ''
     }
 }
+
+// Generate a short description/reasoning for an outfit
+export async function generateOutfitDescription(mood, items) {
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY
+    if (!apiKey) return "This outfit was curated to match your selected mood with a balance of style and comfort."
+
+    try {
+        const itemDescriptions = items.map(i => `${i.title || i.name} (${i.color}, ${i.category})`).join(', ')
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a personal stylist. Write a concise, engaging 1-2 sentence explanation of why this outfit works for the specific mood. Mention color coordination or style balance.'
+                    },
+                    {
+                        role: 'user',
+                        content: `Mood: ${mood}. Items: ${itemDescriptions}. Why is this a good outfit?`
+                    }
+                ],
+                max_tokens: 100,
+                temperature: 0.7
+            })
+        })
+
+        if (!response.ok) throw new Error('API error')
+        const data = await response.json()
+        return data.choices[0]?.message?.content || "A stylish combination perfect for the occasion."
+    } catch (error) {
+        console.error('Error generating description:', error)
+        return "This outfit combines compatible colors and styles for a cohesive look."
+    }
+}

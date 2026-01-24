@@ -61,6 +61,7 @@ export default function MyCloset() {
     const [saving, setSaving] = useState(false)
     const [saveError, setSaveError] = useState(null)
     const [analyzing, setAnalyzing] = useState(false)
+    const [deleteConfirm, setDeleteConfirm] = useState(null) // item id to delete
 
     // All AI-detected fields are editable
     const [analysis, setAnalysis] = useState({
@@ -161,15 +162,22 @@ export default function MyCloset() {
         }
     }, [uploadPreview, analysis])
 
-    const handleDelete = useCallback(async (id) => {
+    const handleDeleteClick = (id) => {
+        setDeleteConfirm(id)
+    }
+
+    const handleDeleteConfirm = useCallback(async () => {
+        if (!deleteConfirm) return
         try {
-            await deleteWardrobeItem(id)
-            setItems(prev => prev.filter(item => item.id !== id))
+            await deleteWardrobeItem(deleteConfirm)
+            setItems(prev => prev.filter(item => item.id !== deleteConfirm))
+            setDeleteConfirm(null)
         } catch (err) {
             console.error('Error deleting:', err)
             setError('Failed to delete item.')
+            setDeleteConfirm(null)
         }
-    }, [])
+    }, [deleteConfirm])
 
     const updateField = (field, value) => {
         setAnalysis(prev => ({ ...prev, [field]: value }))
@@ -494,42 +502,193 @@ export default function MyCloset() {
             ) : (
                 <div className="closet-grid">
                     {filteredItems.map((item, idx) => (
-                        <motion.div key={item.id} className="closet-item" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.02 }}>
-                            <img src={item.image} alt={item.title || item.category} />
-                            <div className="closet-item-overlay">
-                                <span className="closet-item-category">{item.title || item.category3 || item.category}</span>
-                                {item.category4 && (
-                                    <span style={{ fontSize: '0.5rem', background: 'hsl(var(--accent))', color: 'white', padding: '0.125rem 0.25rem', borderRadius: '4px', marginTop: '0.125rem' }}>
-                                        {item.category4}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="closet-item-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                <a
-                                    href="https://qilin.in"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="btn btn-sm"
+                        <motion.div
+                            key={item.id}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: idx * 0.02 }}
+                            style={{
+                                background: 'white',
+                                borderRadius: 'var(--radius-lg)',
+                                overflow: 'hidden',
+                                border: '1px solid hsl(var(--border))'
+                            }}
+                        >
+                            {/* Image container */}
+                            <div style={{ position: 'relative', aspectRatio: '1/1' }}>
+                                <img
+                                    src={item.image}
+                                    alt={item.title || item.category}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                                {/* Delete button - top right */}
+                                <button
+                                    className="btn btn-icon"
                                     style={{
-                                        background: 'hsl(var(--accent))',
-                                        color: 'white',
-                                        fontSize: '0.5rem',
-                                        padding: '0.25rem 0.5rem',
-                                        minHeight: 'unset',
-                                        borderRadius: '4px',
-                                        textDecoration: 'none'
+                                        position: 'absolute',
+                                        top: '0.5rem',
+                                        right: '0.5rem',
+                                        background: 'rgba(255, 255, 255, 0.5)',
+                                        color: 'hsl(var(--destructive))',
+                                        width: '40px',
+                                        height: '40px',
+                                        borderRadius: 'var(--radius-md)',
+                                        backdropFilter: 'blur(4px)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        border: 'none',
+                                        cursor: 'pointer'
                                     }}
+                                    onClick={() => handleDeleteClick(item.id)}
                                 >
-                                    💰 Sell it
-                                </a>
-                                <button className="btn btn-icon btn-ghost btn-sm" style={{ background: 'rgba(255,255,255,0.9)', color: 'hsl(var(--destructive))', width: '28px', height: '28px' }} onClick={() => handleDelete(item.id)}>
-                                    <Trash2 size={12} />
+                                    <Trash2 size={20} />
                                 </button>
+                            </div>
+
+                            {/* Info section */}
+                            <div style={{ padding: '0.75rem' }}>
+                                {/* Title */}
+                                <p style={{
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    margin: 0,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                }}>
+                                    {item.title || item.category3 || 'Untitled'}
+                                </p>
+
+                                {/* Type & Style */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
+                                    {item.category3 && (
+                                        <span style={{
+                                            fontSize: '0.5625rem',
+                                            color: 'hsl(var(--muted-foreground))',
+                                            background: 'hsl(var(--secondary))',
+                                            padding: '0.0625rem 0.25rem',
+                                            borderRadius: '3px'
+                                        }}>
+                                            {item.category3}
+                                        </span>
+                                    )}
+                                    {item.category4 && (
+                                        <span style={{
+                                            fontSize: '0.5625rem',
+                                            color: 'hsl(var(--muted-foreground))',
+                                            background: 'hsl(var(--secondary))',
+                                            padding: '0.0625rem 0.25rem',
+                                            borderRadius: '3px'
+                                        }}>
+                                            {item.category4}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* Action buttons */}
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                    <a
+                                        href="https://qilin.in"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                            flex: 1,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '0.25rem',
+                                            background: 'hsl(var(--primary))',
+                                            color: 'white',
+                                            fontSize: '0.6875rem',
+                                            fontWeight: 600,
+                                            padding: '0.5rem',
+                                            borderRadius: 'var(--radius-md)',
+                                            textDecoration: 'none'
+                                        }}
+                                    >
+                                        Sell it
+                                    </a>
+                                    <button
+                                        className="btn btn-outline btn-sm"
+                                        style={{
+                                            padding: '0.5rem',
+                                            minHeight: 'unset'
+                                        }}
+                                    >
+                                        <Edit2 size={14} />
+                                    </button>
+                                </div>
                             </div>
                         </motion.div>
                     ))}
                 </div>
             )}
+
+            {/* Delete Confirmation Modal */}
+            <AnimatePresence>
+                {deleteConfirm && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            style={{
+                                position: 'fixed',
+                                inset: 0,
+                                background: 'rgba(0, 0, 0, 0.5)',
+                                zIndex: 1000
+                            }}
+                            onClick={() => setDeleteConfirm(null)}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            style={{
+                                position: 'fixed',
+                                top: '50%',
+                                left: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                background: 'white',
+                                borderRadius: 'var(--radius-xl)',
+                                padding: '1.5rem',
+                                width: '90%',
+                                maxWidth: '320px',
+                                zIndex: 1001,
+                                textAlign: 'center'
+                            }}
+                        >
+                            <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🗑️</div>
+                            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.125rem' }}>Delete this item?</h3>
+                            <p style={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
+                                This action cannot be undone.
+                            </p>
+                            <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                <button
+                                    className="btn btn-outline"
+                                    style={{ flex: 1 }}
+                                    onClick={() => setDeleteConfirm(null)}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className="btn"
+                                    style={{
+                                        flex: 1,
+                                        background: 'hsl(var(--destructive))',
+                                        color: 'white'
+                                    }}
+                                    onClick={handleDeleteConfirm}
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
         </div>
     )
 }
+

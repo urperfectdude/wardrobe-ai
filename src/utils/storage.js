@@ -135,9 +135,13 @@ export async function getProducts(filters = {}) {
             query = query.gte('price', filters.priceRange[0]).lte('price', filters.priceRange[1])
         }
 
-        if (filters.thriftedOnly) {
+        // Apply Thrift Filter
+        if (filters.thriftFilter === 'new') {
+            query = query.eq('is_thrifted', false)
+        } else if (filters.thriftFilter === 'thrifted') {
             query = query.eq('is_thrifted', true)
         }
+        // If 'both', we don't apply any filter
 
         if (filters.sortBy === 'price-low') {
             query = query.order('price', { ascending: true })
@@ -184,6 +188,27 @@ export async function getProducts(filters = {}) {
             results = results.filter(p =>
                 p.styles.some(s => filters.styles.includes(s))
             )
+        }
+
+        // Apply new filters: Brand, Color, Category, Material
+        if (filters.brands && filters.brands.length > 0) {
+            results = results.filter(p => filters.brands.includes(p.brand))
+        }
+
+        if (filters.colors && filters.colors.length > 0) {
+            results = results.filter(p => filters.colors.includes(p.color))
+        }
+
+        if (filters.categories && filters.categories.length > 0) {
+            results = results.filter(p => filters.categories.includes(p.category))
+        }
+
+        if (filters.materials && filters.materials.length > 0) {
+            results = results.filter(p => {
+                // Search in name or description (if available) since we don't have a material column
+                const text = (p.name + ' ' + (p.description || '')).toLowerCase()
+                return filters.materials.some(m => text.includes(m.toLowerCase()))
+            })
         }
 
         return results
@@ -265,3 +290,204 @@ export function compressImage(base64, maxWidth = 400) {
     })
 }
 
+// ============================================
+// SAVED OUTFITS
+// ============================================
+
+export async function saveOutfit(outfit, isSaved = false, isPublic = false) {
+    try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+            // Allow saving loosely for guests in local state if needed (not implemented here) or return fake
+            return null
+        }
+
+        const { data, error } = await supabase
+            .from('saved_outfits')
+            .insert({
+                user_id: user.id,
+                mood: outfit.mood,
+                items: outfit.items,
+                description: outfit.description || '',
+                is_saved: isSaved,
+                is_public: isPublic
+            })
+            .select()
+            .single()
+
+        if (error) throw error
+        return data
+    } catch (error) {
+        console.error('Error saving outfit:', error)
+        throw new Error('Failed to save outfit')
+    }
+}
+
+export async function markOutfitAsSaved(outfitId, isPublic = false) {
+    try {
+        const { data, error } = await supabase
+            .from('saved_outfits')
+            .update({ is_saved: true, is_public: isPublic, updated_at: new Date().toISOString() })
+            .eq('id', outfitId)
+            .select()
+            .single()
+
+        if (error) throw error
+        return data
+    } catch (error) {
+        console.error('Error marking outfit as saved:', error)
+        throw new Error('Failed to update outfit')
+    }
+}
+
+// Fetch only generated history (not explicitly saved/favorited)
+export async function getRecentOutfits() {
+    try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return []
+
+        const { data, error } = await supabase
+            .from('saved_outfits')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('is_saved', false) // Only fetch history log
+            .order('created_at', { ascending: false })
+            .limit(20)
+
+        if (error) throw error
+        return data || []
+    } catch (error) {
+        console.error('Error fetching recent outfits:', error)
+        return []
+    }
+}
+
+// Fetch explicitly saved/favorited outfits
+export async function getSavedOutfits() {
+    try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return []
+
+        const { data, error } = await supabase
+            .from('saved_outfits')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('is_saved', true)
+            .order('created_at', { ascending: false })
+
+        if (error) throw error
+        return data || []
+    } catch (error) {
+        console.error('Error fetching saved outfits:', error)
+        return []
+    }
+}
+
+// Deprecated in favor of getSavedOutfits/getRecentOutfits separation, but kept for compatibility if needed
+export async function getOutfitHistory() {
+    return getRecentOutfits()
+}
+
+export async function getPublicOutfits(limit = 10) {
+    try {
+        const { data, error } = await supabase
+            .from('saved_outfits')
+            .select(`
+                *,
+                user_profiles (username, avatar_url, name)
+            `)
+            .eq('is_public', true)
+            .eq('is_saved', true) // Should likely be saved to be public? Or just public is enough. User said "public marked". Usually implies saved+public.
+            .order('created_at', { ascending: false })
+            .limit(limit)
+
+        if (error) throw error
+        return data || []
+    } catch (error) {
+        console.error('Error fetching public outfits:', error)
+        return []
+    }
+}
+
+export async function deleteOutfit(outfitId) {
+    try {
+        const { error } = await supabase
+            .from('saved_outfits')
+            .delete()
+            .eq('id', outfitId)
+
+        if (error) throw error
+        return true
+    } catch (error) {
+        console.error('Error deleting outfit:', error)
+        throw new Error('Failed to delete outfit')
+    }
+}
+
+// ============================================
+// PURCHASE REQUESTS
+// ============================================
+
+export async function sendPurchaseRequest(itemId, sellerId, offerPrice, message = '') {
+    try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('Must be logged in to make offers')
+
+        const { data, error } = await supabase
+            .from('purchase_requests')
+            .insert({
+                item_id: itemId,
+                seller_id: sellerId,
+                buyer_id: user.id,
+                offer_price: offerPrice,
+                message: message
+            })
+            .select()
+            .single()
+
+        if (error) throw error
+        return data
+    } catch (error) {
+        console.error('Error sending purchase request:', error)
+        throw new Error('Failed to send offer')
+    }
+}
+
+export async function getPurchaseRequests() {
+    try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return []
+
+        const { data, error } = await supabase
+            .from('purchase_requests')
+            .select('*')
+            .or(`seller_id.eq.${user.id},buyer_id.eq.${user.id}`)
+            .order('created_at', { ascending: false })
+
+        if (error) throw error
+        return data || []
+    } catch (error) {
+        console.error('Error fetching purchase requests:', error)
+        return []
+    }
+}
+
+export async function updatePurchaseRequest(requestId, status, qilinLink = null) {
+    try {
+        const updateData = { status, updated_at: new Date().toISOString() }
+        if (qilinLink) updateData.qilin_link = qilinLink
+
+        const { data, error } = await supabase
+            .from('purchase_requests')
+            .update(updateData)
+            .eq('id', requestId)
+            .select()
+            .single()
+
+        if (error) throw error
+        return data
+    } catch (error) {
+        console.error('Error updating purchase request:', error)
+        throw new Error('Failed to update request')
+    }
+}
