@@ -57,6 +57,7 @@ export default function Profile() {
     }
 
     const loadRequests = async () => {
+        setLoadingRequests(true)
         try {
             const data = await getPurchaseRequests()
             setRequests(data)
