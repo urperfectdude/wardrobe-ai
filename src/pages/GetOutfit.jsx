@@ -8,6 +8,7 @@ import { EXISTING_CATEGORY4, EXISTING_COLORS, generateOutfitDescription } from '
 import { useAuth } from '../contexts/AuthContext'
 import { ChevronDown, ChevronUp, History, Bookmark } from 'lucide-react'
 import OnboardingFlow from '../components/OnboardingFlow'
+import DualRangeSlider from '../components/DualRangeSlider'
 
 const MOODS = [
     { id: 'party', label: 'Party' },
@@ -569,8 +570,8 @@ export default function GetOutfit() {
                                             disabled={isSavingOutfit || !activeOutfitId}
                                             style={{ fontSize: '0.75rem' }}
                                         >
-                                            {isSavingOutfit ? <Loader2 size={13} className="animate-spin" /> : <Heart size={13} />}
-                                            Save to Favs
+                                            {isSavingOutfit ? <Loader2 size={13} className="animate-spin" /> : <Bookmark size={13} />}
+                                            Save Outfit
                                         </button>
                                     )}
                                 </div>
@@ -994,24 +995,19 @@ export default function GetOutfit() {
 
                             {/* Budget Slider */}
                             <div style={{ marginBottom: '1.25rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Budget Range: ₹{Array.isArray(preferences.budget) ? preferences.budget[0] : 0} - ₹{Array.isArray(preferences.budget) ? preferences.budget[1] : 10000}+
+                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
+                                    Budget Range
                                 </label>
-                                <div style={{ padding: '0 0.5rem' }}>
-                                    <input
-                                        type="range"
-                                        className="range-slider"
-                                        min={0}
-                                        max={20000}
-                                        step={500}
-                                        value={Array.isArray(preferences.budget) ? preferences.budget[1] : 5000}
-                                        onChange={(e) => setPreferences(prev => ({
-                                            ...prev,
-                                            budget: [0, parseInt(e.target.value)]
-                                        }))}
-                                        style={{ width: '100%' }}
-                                    />
-                                </div>
+                                <DualRangeSlider
+                                    min={0}
+                                    max={20000}
+                                    step={500}
+                                    value={Array.isArray(preferences.budget) ? preferences.budget : [500, 5000]}
+                                    onChange={(newBudget) => setPreferences(prev => ({
+                                        ...prev,
+                                        budget: newBudget
+                                    }))}
+                                />
                             </div>
 
                             <button

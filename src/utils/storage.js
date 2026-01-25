@@ -4,22 +4,90 @@
 import { supabase } from '../lib/supabase'
 
 // ============================================
+// HELPER: Manual Session & Fetch
+// ============================================
+
+function getManualSession() {
+    try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+        if (!supabaseUrl) return null
+
+        // Extract project ref from URL (e.g. https://xyz.supabase.co -> xyz)
+        const projectRef = supabaseUrl.replace('https://', '').split('.')[0]
+        const key = `sb-${projectRef}-auth-token`
+
+        const stored = localStorage.getItem(key)
+        if (!stored) return null
+        return JSON.parse(stored) // Returns { access_token, user, ... }
+    } catch (e) {
+        console.warn('Error reading manual session:', e)
+        return null
+    }
+}
+
+async function supabaseFetch(table, options = {}) {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+    if (!supabaseUrl || !supabaseKey) throw new Error('Supabase not configured')
+
+    let url = `${supabaseUrl}/rest/v1/${table}`
+    const headers = {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+    }
+
+    // Add Auth token if signed in (Try manual first to avoid client hang)
+    const session = getManualSession()
+    if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+    } else {
+        // Fallback to client if manual fails (unlikely if client hangs)
+        // Check if client has session
+        const { data } = await supabase.auth.getSession()
+        if (data?.session?.access_token) {
+            headers['Authorization'] = `Bearer ${data.session.access_token}`
+        }
+    }
+
+    if (options.params) {
+        const params = new URLSearchParams()
+        Object.entries(options.params).forEach(([k, v]) => params.append(k, v))
+        url += `?${params.toString()}`
+    }
+
+    if (options.query) {
+        url += `?${options.query}`
+    } else {
+        url += `?select=*`
+    }
+
+    const fetchOptions = { headers }
+    if (options.method) fetchOptions.method = options.method
+    if (options.body) fetchOptions.body = JSON.stringify(options.body)
+
+    const response = await fetch(url, fetchOptions)
+    if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`)
+    return await response.json() // Returns array by default for select, or object for single
+}
+
+// ============================================
 // WARDROBE ITEMS
 // ============================================
 
 export async function getWardrobeItems() {
     try {
-        if (!supabase) return []
-        const { data: { user } } = await supabase.auth.getUser()
+        const session = getManualSession()
+        const user = session?.user
         if (!user) return []
 
-        const { data, error } = await supabase
-            .from('wardrobe_items')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false })
-
-        if (error) throw error
+        // Use supabaseFetch specific for wardrobe items query
+        // "user_id=eq.USERID&order=created_at.desc"
+        const data = await supabaseFetch('wardrobe_items', {
+            query: `user_id=eq.${user.id}&order=created_at.desc`
+        })
 
         return data.map(item => ({
             id: item.id,
@@ -42,124 +110,36 @@ export async function getWardrobeItems() {
     }
 }
 
-export async function saveWardrobeItem(item) {
-    try {
-        // Upload image to Supabase Storage if it's a base64 string
-        let imageUrl = item.image
-        if (item.image && item.image.startsWith('data:')) {
-            const fileName = `uploads/${Date.now()}.jpg`
-            const base64Data = item.image.split(',')[1]
-
-            const { error: uploadError } = await supabase.storage
-                .from('wardrobe-images')
-                .upload(fileName, decode(base64Data), {
-                    contentType: 'image/jpeg'
-                })
-
-            if (uploadError) {
-                console.error('Image upload error:', uploadError)
-                // Use base64 as fallback if storage upload fails
-                imageUrl = item.image
-            } else {
-                const { data: { publicUrl } } = supabase.storage
-                    .from('wardrobe-images')
-                    .getPublicUrl(fileName)
-                imageUrl = publicUrl
-            }
-        }
-
-        const { data, error } = await supabase
-            .from('wardrobe_items')
-            .insert({
-                image_url: imageUrl,
-                title: item.title || '',
-                description: item.description || '',
-                brand: item.brand || '',
-                category: item.category || '',
-                color: item.color || '',
-                category1: item.category1 || '',
-                category2: item.category2 || '',
-                category3: item.category3 || '',
-                category4: item.category4 || '',
-                issue: item.issue || ''
-            })
-            .select()
-            .single()
-
-        if (error) throw error
-
-        return {
-            id: data.id,
-            image: data.image_url,
-            title: data.title,
-            description: data.description,
-            brand: data.brand,
-            category: data.category,
-            color: data.color,
-            category1: data.category1,
-            category2: data.category2,
-            category3: data.category3,
-            category4: data.category4,
-            issue: data.issue,
-            createdAt: data.created_at
-        }
-    } catch (error) {
-        console.error('Error saving wardrobe item:', error)
-        throw new Error('Failed to save item')
-    }
-}
-
-export async function deleteWardrobeItem(id) {
-    try {
-        const { error } = await supabase
-            .from('wardrobe_items')
-            .delete()
-            .eq('id', id)
-
-        if (error) throw error
-        return true
-    } catch (error) {
-        console.error('Error deleting wardrobe item:', error)
-        throw new Error('Failed to delete item')
-    }
-}
-
-// ============================================
-// PRODUCTS (from Supabase)
-// ============================================
-
 export async function getProducts(filters = {}) {
     try {
-        if (!supabase) return []
-        let query = supabase.from('products').select('*')
+        const params = { select: '*' }
+
+        // Build filters as URL params is tricky for mixed AND/OR logic, 
+        // but basics work. Complex filters need PostgREST syntax.
+        // We'll reimplement the URL construction logic here.
+
+        let queryString = 'select=*'
 
         if (filters.platforms && filters.platforms.length > 0) {
-            query = query.in('platform', filters.platforms)
+            queryString += `&platform=in.(${filters.platforms.join(',')})`
         }
-
         if (filters.priceRange) {
-            query = query.gte('price', filters.priceRange[0]).lte('price', filters.priceRange[1])
+            queryString += `&price=gte.${filters.priceRange[0]}&price=lte.${filters.priceRange[1]}`
         }
-
-        // Apply Thrift Filter
         if (filters.thriftFilter === 'new') {
-            query = query.eq('is_thrifted', false)
+            queryString += `&is_thrifted=eq.false`
         } else if (filters.thriftFilter === 'thrifted') {
-            query = query.eq('is_thrifted', true)
+            queryString += `&is_thrifted=eq.true`
         }
-        // If 'both', we don't apply any filter
-
         if (filters.sortBy === 'price-low') {
-            query = query.order('price', { ascending: true })
+            queryString += `&order=price.asc`
         } else if (filters.sortBy === 'price-high') {
-            query = query.order('price', { ascending: false })
+            queryString += `&order=price.desc`
         } else if (filters.sortBy === 'rating') {
-            query = query.order('rating', { ascending: false })
+            queryString += `&order=rating.desc`
         }
 
-        const { data, error } = await query
-
-        if (error) throw error
+        const data = await supabaseFetch('products', { query: queryString })
 
         let results = data.map(p => ({
             id: p.id,
@@ -180,7 +160,7 @@ export async function getProducts(filters = {}) {
             isThrifted: p.is_thrifted
         }))
 
-        // Apply text search client-side
+        // Client-side filtering
         if (filters.query) {
             const q = filters.query.toLowerCase()
             results = results.filter(p =>
@@ -188,30 +168,20 @@ export async function getProducts(filters = {}) {
                 (p.brand || '').toLowerCase().includes(q)
             )
         }
-
-        // Apply style filter client-side
-        if (filters.styles && filters.styles.length > 0) {
-            results = results.filter(p =>
-                p.styles.some(s => filters.styles.includes(s))
-            )
-        }
-
-        // Apply new filters: Brand, Color, Category, Material
         if (filters.brands && filters.brands.length > 0) {
             results = results.filter(p => filters.brands.includes(p.brand))
         }
-
+        if (filters.styles && filters.styles.length > 0) {
+            results = results.filter(p => p.styles.some(s => filters.styles.includes(s)))
+        }
         if (filters.colors && filters.colors.length > 0) {
             results = results.filter(p => filters.colors.includes(p.color))
         }
-
         if (filters.categories && filters.categories.length > 0) {
             results = results.filter(p => filters.categories.includes(p.category))
         }
-
         if (filters.materials && filters.materials.length > 0) {
             results = results.filter(p => {
-                // Search in name or description (if available) since we don't have a material column
                 const text = (p.name + ' ' + (p.description || '')).toLowerCase()
                 return filters.materials.some(m => text.includes(m.toLowerCase()))
             })
@@ -224,37 +194,193 @@ export async function getProducts(filters = {}) {
     }
 }
 
+export async function saveWardrobeItem(item) {
+    try {
+        const session = getManualSession()
+        const user = session?.user
+        if (!user) throw new Error('Not logged in')
+
+        // Image upload still needs supabase client storage or manual fetch to storage API
+        // Storage API is complex via fetch (binary body). 
+        // We'll try Supabase client for storage first, if it works. 
+        // Usually storage client doesn't hang like Auth does.
+
+        let imageUrl = item.image
+        if (item.image && item.image.startsWith('data:')) {
+            const fileName = `uploads/${Date.now()}.jpg`
+            const base64Data = item.image.split(',')[1]
+
+            const { error: uploadError } = await supabase.storage
+                .from('wardrobe-images')
+                .upload(fileName, decode(base64Data), {
+                    contentType: 'image/jpeg'
+                })
+
+            if (uploadError) {
+                console.error('Image upload error:', uploadError)
+                // Fallback to base64
+                imageUrl = item.image
+            } else {
+                const { data: { publicUrl } } = supabase.storage
+                    .from('wardrobe-images')
+                    .getPublicUrl(fileName)
+                imageUrl = publicUrl
+            }
+        }
+
+        const data = await supabaseFetch('wardrobe_items', {
+            method: 'POST',
+            body: {
+                user_id: user.id, // Explicitly send user_id for RLS safety if policy allows or if token header handles it
+                image_url: imageUrl,
+                title: item.title || '',
+                description: item.description || '',
+                brand: item.brand || '',
+                category: item.category || '',
+                color: item.color || '',
+                category1: item.category1 || '',
+                category2: item.category2 || '',
+                category3: item.category3 || '',
+                category4: item.category4 || '',
+                issue: item.issue || ''
+            },
+            headers: {
+                'Prefer': 'return=representation'
+            }
+        })
+
+        const newItem = Array.isArray(data) ? data[0] : data
+
+        return {
+            id: newItem.id,
+            image: newItem.image_url,
+            title: newItem.title,
+            description: newItem.description,
+            brand: newItem.brand,
+            category: newItem.category,
+            color: newItem.color,
+            category1: newItem.category1,
+            category2: newItem.category2,
+            category3: newItem.category3,
+            category4: newItem.category4,
+            issue: newItem.issue,
+            createdAt: newItem.created_at
+        }
+    } catch (error) {
+        console.error('Error saving wardrobe item:', error)
+        throw new Error('Failed to save item')
+    }
+}
+
+export async function deleteWardrobeItem(id) {
+    try {
+        const session = getManualSession()
+        if (!session?.user) throw new Error('Not logged in')
+
+        // Use supabaseFetch with method DELETE usually requires ID in URL
+        // rest/v1/table?id=eq.ID
+        await supabaseFetch('wardrobe_items', {
+            method: 'DELETE',
+            query: `id=eq.${id}`
+        })
+        return true
+    } catch (error) {
+        console.error('Error deleting wardrobe item:', error)
+        throw new Error('Failed to delete item')
+    }
+}
+
 // ============================================
 // USER PREFERENCES
 // ============================================
 
 export async function savePreferences(prefs) {
     try {
-        // For demo, save to localStorage since we don't have auth
-        localStorage.setItem('wardrobe_preferences', JSON.stringify(prefs))
+        const session = getManualSession()
+        const user = session?.user
+        if (!user) {
+            localStorage.setItem('wardrobe_preferences', JSON.stringify(prefs))
+            return prefs
+        }
+
+        const dbPrefs = {
+            user_id: user.id,
+            thrift_preference: prefs.thriftPreference || 'both',
+            sizes: prefs.sizes || [],
+            preferred_colors: prefs.preferredColors || [],
+            budget: prefs.budget || [500, 5000],
+            fit_type: prefs.fitType || [],
+            preferred_styles: prefs.preferredStyles || [],
+            materials: prefs.materials || [],
+            updated_at: new Date().toISOString()
+        }
+
+        await supabaseFetch('user_preferences', {
+            method: 'POST', // UPSERT is POST w/ Prefer: resolution=merge-duplicates in header for some dbs, but Supabase REST supports upsert via POST with on_conflict
+            headers: { 'Prefer': 'resolution=merge-duplicates' },
+            body: dbPrefs,
+            query: 'on_conflict=user_id'
+        })
+
         return prefs
     } catch (error) {
         console.error('Error saving preferences:', error)
-        throw new Error('Failed to save preferences')
+        localStorage.setItem('wardrobe_preferences', JSON.stringify(prefs))
+        return prefs
     }
 }
 
 export async function getPreferences() {
     try {
-        // For demo, read from localStorage
-        const saved = localStorage.getItem('wardrobe_preferences')
-        if (saved) {
-            return JSON.parse(saved)
+        const session = getManualSession()
+        const user = session?.user
+        if (!user) {
+            const saved = localStorage.getItem('wardrobe_preferences')
+            return saved ? JSON.parse(saved) : getDefaultPreferences()
         }
-        return {
-            favoriteStyles: [],
-            favoriteColors: [],
-            bodyType: '',
-            preferredOccasions: []
+
+        try {
+            const data = await supabaseFetch('user_preferences', {
+                query: `user_id=eq.${user.id}`,
+                headers: { 'Accept': 'application/vnd.pgrst.object+json' } // Single object
+            })
+
+            // supabaseFetch returns JSON. If single object requested, might be obj or array if not strict.
+            // Our helper returns result. 
+            // Postgrest returns error if .single() is not satisfied via Accept header.
+            // If Accept header not set properly, it returns array.
+            const prefs = Array.isArray(data) ? data[0] : data
+
+            if (!prefs) return getDefaultPreferences()
+
+            return {
+                thriftPreference: prefs.thrift_preference || 'both',
+                sizes: prefs.sizes || [],
+                preferredColors: prefs.preferred_colors || [],
+                budget: prefs.budget || [500, 5000],
+                fitType: prefs.fit_type || [],
+                preferredStyles: prefs.preferred_styles || [],
+                materials: prefs.materials || []
+            }
+        } catch (e) {
+            // If 406 or empty
+            return getDefaultPreferences()
         }
     } catch (error) {
         console.error('Error loading preferences:', error)
-        return null
+        return getDefaultPreferences()
+    }
+}
+
+function getDefaultPreferences() {
+    return {
+        thriftPreference: 'both',
+        sizes: [],
+        preferredColors: [],
+        budget: [500, 5000],
+        fitType: [],
+        preferredStyles: [],
+        materials: []
     }
 }
 
@@ -302,28 +428,22 @@ export function compressImage(base64, maxWidth = 400) {
 
 export async function saveOutfit(outfit, isSaved = false, isPublic = false) {
     try {
-        if (!supabase) return null
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) {
-            // Allow saving loosely for guests in local state if needed (not implemented here) or return fake
-            return null
-        }
+        const session = getManualSession()
+        const user = session?.user
+        if (!user) return null
 
-        const { data, error } = await supabase
-            .from('saved_outfits')
-            .insert({
+        const data = await supabaseFetch('saved_outfits', {
+            method: 'POST',
+            body: {
                 user_id: user.id,
                 mood: outfit.mood,
                 items: outfit.items,
                 description: outfit.description || '',
                 is_saved: isSaved,
                 is_public: isPublic
-            })
-            .select()
-            .single()
-
-        if (error) throw error
-        return data
+            }
+        })
+        return Array.isArray(data) ? data[0] : data
     } catch (error) {
         console.error('Error saving outfit:', error)
         throw new Error('Failed to save outfit')
@@ -332,85 +452,60 @@ export async function saveOutfit(outfit, isSaved = false, isPublic = false) {
 
 export async function markOutfitAsSaved(outfitId, isPublic = false) {
     try {
-        const { data, error } = await supabase
-            .from('saved_outfits')
-            .update({ is_saved: true, is_public: isPublic, updated_at: new Date().toISOString() })
-            .eq('id', outfitId)
-            .select()
-            .single()
-
-        if (error) throw error
-        return data
+        const data = await supabaseFetch('saved_outfits', {
+            method: 'PATCH',
+            query: `id=eq.${outfitId}`,
+            body: { is_saved: true, is_public: isPublic, updated_at: new Date().toISOString() }
+        })
+        return Array.isArray(data) ? data[0] : data
     } catch (error) {
         console.error('Error marking outfit as saved:', error)
         throw new Error('Failed to update outfit')
     }
 }
 
-// Fetch only generated history (not explicitly saved/favorited)
 export async function getRecentOutfits() {
     try {
-        if (!supabase) return []
-        const { data: { user } } = await supabase.auth.getUser()
+        const session = getManualSession()
+        const user = session?.user
         if (!user) return []
 
-        const { data, error } = await supabase
-            .from('saved_outfits')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('is_saved', false) // Only fetch history log
-            .order('created_at', { ascending: false })
-            .limit(20)
-
-        if (error) throw error
+        const data = await supabaseFetch('saved_outfits', {
+            query: `user_id=eq.${user.id}&order=created_at.desc&limit=20`
+        })
         return data || []
     } catch (error) {
-        console.error('Error fetching recent outfits:', error)
         return []
     }
 }
 
-// Fetch explicitly saved/favorited outfits
 export async function getSavedOutfits() {
     try {
-        if (!supabase) return []
-        const { data: { user } } = await supabase.auth.getUser()
+        const session = getManualSession()
+        const user = session?.user
         if (!user) return []
 
-        const { data, error } = await supabase
-            .from('saved_outfits')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('is_saved', true)
-            .order('created_at', { ascending: false })
-
-        if (error) throw error
+        const data = await supabaseFetch('saved_outfits', {
+            query: `user_id=eq.${user.id}&is_saved=eq.true&order=created_at.desc`
+        })
         return data || []
     } catch (error) {
-        console.error('Error fetching saved outfits:', error)
         return []
     }
 }
 
-// Deprecated in favor of getSavedOutfits/getRecentOutfits separation, but kept for compatibility if needed
 export async function getOutfitHistory() {
     return getRecentOutfits()
 }
 
 export async function getPublicOutfits(limit = 10) {
     try {
-        const { data, error } = await supabase
-            .from('saved_outfits')
-            .select(`
-                *,
-                user_profiles (username, avatar_url, name)
-            `)
-            .eq('is_public', true)
-            .eq('is_saved', true) // Should likely be saved to be public? Or just public is enough. User said "public marked". Usually implies saved+public.
-            .order('created_at', { ascending: false })
-            .limit(limit)
+        // This requires a join with user_profiles. REST API can do this with select=*,user_profiles(...) syntax
+        // user_profiles must be a relationship
 
-        if (error) throw error
+        const data = await supabaseFetch('saved_outfits', {
+            query: `select=*,user_profiles(username,avatar_url,name)&is_public=eq.true&is_saved=eq.true&order=created_at.desc&limit=${limit}`
+        })
         return data || []
     } catch (error) {
         console.error('Error fetching public outfits:', error)
@@ -420,15 +515,12 @@ export async function getPublicOutfits(limit = 10) {
 
 export async function deleteOutfit(outfitId) {
     try {
-        const { error } = await supabase
-            .from('saved_outfits')
-            .delete()
-            .eq('id', outfitId)
-
-        if (error) throw error
+        await supabaseFetch('saved_outfits', {
+            method: 'DELETE',
+            query: `id=eq.${outfitId}`
+        })
         return true
     } catch (error) {
-        console.error('Error deleting outfit:', error)
         throw new Error('Failed to delete outfit')
     }
 }
@@ -439,46 +531,38 @@ export async function deleteOutfit(outfitId) {
 
 export async function sendPurchaseRequest(itemId, sellerId, offerPrice, message = '') {
     try {
-        if (!supabase) throw new Error('Service not configured')
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) throw new Error('Must be logged in to make offers')
+        const session = getManualSession()
+        const user = session?.user
+        if (!user) throw new Error('Must be logged in')
 
-        const { data, error } = await supabase
-            .from('purchase_requests')
-            .insert({
+        const data = await supabaseFetch('purchase_requests', {
+            method: 'POST',
+            body: {
                 item_id: itemId,
                 seller_id: sellerId,
                 buyer_id: user.id,
                 offer_price: offerPrice,
                 message: message
-            })
-            .select()
-            .single()
-
-        if (error) throw error
-        return data
+            }
+        })
+        return Array.isArray(data) ? data[0] : data
     } catch (error) {
-        console.error('Error sending purchase request:', error)
         throw new Error('Failed to send offer')
     }
 }
 
 export async function getPurchaseRequests() {
     try {
-        if (!supabase) return []
-        const { data: { user } } = await supabase.auth.getUser()
+        const session = getManualSession()
+        const user = session?.user
         if (!user) return []
 
-        const { data, error } = await supabase
-            .from('purchase_requests')
-            .select('*')
-            .or(`seller_id.eq.${user.id},buyer_id.eq.${user.id}`)
-            .order('created_at', { ascending: false })
-
-        if (error) throw error
+        // OR syntax: or=(seller_id.eq.UID,buyer_id.eq.UID)
+        const data = await supabaseFetch('purchase_requests', {
+            query: `or=(seller_id.eq.${user.id},buyer_id.eq.${user.id})&order=created_at.desc`
+        })
         return data || []
     } catch (error) {
-        console.error('Error fetching purchase requests:', error)
         return []
     }
 }
@@ -488,17 +572,13 @@ export async function updatePurchaseRequest(requestId, status, qilinLink = null)
         const updateData = { status, updated_at: new Date().toISOString() }
         if (qilinLink) updateData.qilin_link = qilinLink
 
-        const { data, error } = await supabase
-            .from('purchase_requests')
-            .update(updateData)
-            .eq('id', requestId)
-            .select()
-            .single()
-
-        if (error) throw error
-        return data
+        const data = await supabaseFetch('purchase_requests', {
+            method: 'PATCH',
+            body: updateData,
+            query: `id=eq.${requestId}`
+        })
+        return Array.isArray(data) ? data[0] : data
     } catch (error) {
-        console.error('Error updating purchase request:', error)
         throw new Error('Failed to update request')
     }
 }

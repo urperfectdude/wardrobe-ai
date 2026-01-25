@@ -47,57 +47,80 @@ export function AuthProvider({ children }) {
     useEffect(() => {
         let isMounted = true
 
-        // Get initial session
-        async function initSession() {
+        // 1. Manual Session Hydration (Bypass client hang)
+        const hydrateSession = () => {
             try {
-                const currentSession = await getSession()
-                if (!isMounted) return
+                const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+                if (!supabaseUrl) return false
 
-                setSession(currentSession)
-                const currentUser = currentSession?.user || null
-                setUser(currentUser)
+                // Extract project ref (e.g., https://xyz.supabase.co -> xyz)
+                const projectRef = supabaseUrl.replace('https://', '').split('.')[0]
+                const key = `sb-${projectRef}-auth-token`
+                const stored = localStorage.getItem(key)
 
-                if (currentUser) {
-                    const profile = await fetchProfile(currentUser.id)
-                    if (isMounted) setUserProfile(profile)
+                if (stored) {
+                    const manualSession = JSON.parse(stored)
+                    console.log('Manual hydration attempt found session for:', manualSession?.user?.id)
+                    if (manualSession?.user && isMounted) {
+                        setSession(manualSession)
+                        setUser(manualSession.user)
+
+                        // Try fetching profile non-blocking
+                        if (manualSession.user.id) {
+                            fetchProfile(manualSession.user.id).then(p => {
+                                if (isMounted && p) setUserProfile(p)
+                            })
+                        }
+                        setLoading(false)
+                        return true
+                    }
                 }
-            } catch (error) {
-                // Ignore AbortError from React StrictMode remounts
-                if (error?.name === 'AbortError') return
-                console.error('Error getting session:', error)
-            } finally {
-                if (isMounted) setLoading(false)
+            } catch (e) {
+                console.warn('Manual hydration error:', e)
             }
+            return false
         }
 
-        initSession()
+        const hydrated = hydrateSession()
 
-        // Listen for auth changes
+        // Safety timeout (only if not hydrated)
+        const safetyTimeout = setTimeout(() => {
+            if (isMounted && loading) {
+                console.warn('Auth initialization timed out, forcing load completion')
+                setLoading(false)
+            }
+        }, 3000)
+
+        // 2. Listen for auth changes (Keep Supabase client logic for updates)
         const { data: { subscription } } = onAuthStateChange(async (event, newSession) => {
             if (!isMounted) return
-            console.log('Auth state changed:', event)
-            setSession(newSession)
-            const newUser = newSession?.user || null
-            setUser(newUser)
 
-            if (newUser) {
+            console.log('Auth state changed:', event)
+
+            // If we manually hydrated and this event matches, just update state
+            setSession(newSession)
+            setUser(newSession?.user || null)
+
+            if (newSession?.user) {
                 try {
-                    const profile = await fetchProfile(newUser.id)
-                    if (isMounted) setUserProfile(profile)
-                } catch (error) {
-                    if (error?.name !== 'AbortError') {
-                        console.error('Error fetching profile:', error)
+                    // Don't refetch if we already have the correct profile
+                    if (userProfile?.user_id !== newSession.user.id) {
+                        const profile = await fetchProfile(newSession.user.id)
+                        if (isMounted) setUserProfile(profile)
                     }
+                } catch (err) {
+                    console.warn('Profile fetch failed during state change:', err)
                 }
             } else {
                 setUserProfile(null)
             }
 
-            setLoading(false)
+            if (isMounted) setLoading(false)
         })
 
         return () => {
             isMounted = false
+            clearTimeout(safetyTimeout)
             subscription?.unsubscribe()
         }
     }, [])
