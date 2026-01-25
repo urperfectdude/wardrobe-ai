@@ -7,20 +7,16 @@ import { supabase } from '../lib/supabase'
 // HELPER: Manual Session & Fetch
 // ============================================
 
-function getManualSession() {
+// ============================================
+// HELPER: Auth & Fetch
+// ============================================
+
+async function getAuthSession() {
     try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-        if (!supabaseUrl) return null
-
-        // Extract project ref from URL (e.g. https://xyz.supabase.co -> xyz)
-        const projectRef = supabaseUrl.replace('https://', '').split('.')[0]
-        const key = `sb-${projectRef}-auth-token`
-
-        const stored = localStorage.getItem(key)
-        if (!stored) return null
-        return JSON.parse(stored) // Returns { access_token, user, ... }
+        const { data } = await supabase.auth.getSession()
+        return data?.session || null
     } catch (e) {
-        console.warn('Error reading manual session:', e)
+        console.warn('Error getting session:', e)
         return null
     }
 }
@@ -39,17 +35,10 @@ async function supabaseFetch(table, options = {}) {
         'Prefer': 'return=representation'
     }
 
-    // Add Auth token if signed in (Try manual first to avoid client hang)
-    const session = getManualSession()
+    // Add Auth token if signed in
+    const session = await getAuthSession()
     if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`
-    } else {
-        // Fallback to client if manual fails (unlikely if client hangs)
-        // Check if client has session
-        const { data } = await supabase.auth.getSession()
-        if (data?.session?.access_token) {
-            headers['Authorization'] = `Bearer ${data.session.access_token}`
-        }
     }
 
     if (options.params) {
@@ -69,7 +58,10 @@ async function supabaseFetch(table, options = {}) {
     if (options.body) fetchOptions.body = JSON.stringify(options.body)
 
     const response = await fetch(url, fetchOptions)
-    if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`)
+    if (!response.ok) {
+        const errText = await response.text()
+        throw new Error(`Fetch failed (${response.status}): ${errText}`)
+    }
     return await response.json() // Returns array by default for select, or object for single
 }
 
@@ -79,7 +71,7 @@ async function supabaseFetch(table, options = {}) {
 
 export async function getWardrobeItems() {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) return []
 
@@ -196,7 +188,7 @@ export async function getProducts(filters = {}) {
 
 export async function saveWardrobeItem(item) {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) throw new Error('Not logged in')
 
@@ -274,7 +266,7 @@ export async function saveWardrobeItem(item) {
 
 export async function deleteWardrobeItem(id) {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         if (!session?.user) throw new Error('Not logged in')
 
         // Use supabaseFetch with method DELETE usually requires ID in URL
@@ -296,7 +288,7 @@ export async function deleteWardrobeItem(id) {
 
 export async function savePreferences(prefs) {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) {
             localStorage.setItem('wardrobe_preferences', JSON.stringify(prefs))
@@ -332,7 +324,7 @@ export async function savePreferences(prefs) {
 
 export async function getPreferences() {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) {
             const saved = localStorage.getItem('wardrobe_preferences')
@@ -428,7 +420,7 @@ export function compressImage(base64, maxWidth = 400) {
 
 export async function saveOutfit(outfit, isSaved = false, isPublic = false) {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) return null
 
@@ -466,7 +458,7 @@ export async function markOutfitAsSaved(outfitId, isPublic = false) {
 
 export async function getRecentOutfits() {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) return []
 
@@ -481,7 +473,7 @@ export async function getRecentOutfits() {
 
 export async function getSavedOutfits() {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) return []
 
@@ -531,7 +523,7 @@ export async function deleteOutfit(outfitId) {
 
 export async function sendPurchaseRequest(itemId, sellerId, offerPrice, message = '') {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) throw new Error('Must be logged in')
 
@@ -553,7 +545,7 @@ export async function sendPurchaseRequest(itemId, sellerId, offerPrice, message 
 
 export async function getPurchaseRequests() {
     try {
-        const session = getManualSession()
+        const session = await getAuthSession()
         const user = session?.user
         if (!user) return []
 

@@ -567,31 +567,7 @@ h4 {
   gap: var(--spacing-md);
 }
 
-@media (min-width: 480px) {
-  .closet-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (min-width: 768px) {
-  .closet-grid {
-    grid-template-columns: repeat(4, 1fr);
-    gap: var(--spacing-lg);
-  }
-}
-
-@media (min-width: 1024px) {
-  .closet-grid {
-    grid-template-columns: repeat(5, 1fr);
-  }
-}
-
-@media (min-width: 1440px) {
-  .closet-grid {
-    grid-template-columns: repeat(6, 1fr);
-    gap: var(--spacing-xl);
-  }
-}
+/* Remove viewport-based column scaling since container is component-locked to 600px */
 
 .closet-item {
   position: relative;
