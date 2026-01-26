@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { User, Camera, AtSign, Heart, LogOut, Check, Loader2, Settings, ChevronRight, Palette, Shirt, ShoppingBag } from 'lucide-react'
+import { User, PencilSimple, At, Heart, SignOut, Check, SpinnerGap, Gear, CaretRight, Palette, TShirt, ShoppingBag } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -134,7 +134,7 @@ export default function Profile() {
     if (authLoading) {
         return (
             <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-                <Loader2 size={32} className="animate-spin" style={{ color: 'hsl(var(--accent))' }} />
+                <SpinnerGap size={32} className="animate-spin" style={{ color: 'hsl(var(--accent))' }} />
             </div>
         )
     }
@@ -204,7 +204,7 @@ export default function Profile() {
                     border: '1px solid hsl(var(--border))'
                 }}
             >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {avatarUrl ? (
                         <img src={avatarUrl} alt="Profile" style={{ width: '56px', height: '56px', borderRadius: '50%' }} />
                     ) : (
@@ -238,7 +238,7 @@ export default function Profile() {
                         )}
                         {editMode ? (
                             <div style={{ position: 'relative' }}>
-                                <AtSign size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'hsl(var(--muted-foreground))' }} />
+                                <At size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'hsl(var(--muted-foreground))' }} />
                                 <input
                                     type="text"
                                     className="input"
@@ -254,22 +254,39 @@ export default function Profile() {
                             </p>
                         )}
                     </div>
+                    {/* Pencil Edit Icon */}
+                    {!editMode && (
+                        <button
+                            onClick={() => setEditMode(true)}
+                            style={{
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: 'var(--radius-md)',
+                                background: 'hsl(var(--secondary))',
+                                border: '1px solid hsl(var(--border))',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                color: 'hsl(var(--muted-foreground))',
+                                flexShrink: 0
+                            }}
+                        >
+                            <PencilSimple size={18} weight="bold" />
+                        </button>
+                    )}
                 </div>
 
-                {editMode ? (
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {editMode && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
                         <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setEditMode(false)}>
                             Cancel
                         </button>
                         <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSaveProfile} disabled={saving}>
-                            {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                            {saving ? <SpinnerGap size={16} className="animate-spin" /> : <Check size={16} />}
                             Save
                         </button>
                     </div>
-                ) : (
-                    <button className="btn btn-outline w-full" onClick={() => setEditMode(true)}>
-                        Edit Profile
-                    </button>
                 )}
             </motion.div>
 
@@ -289,7 +306,7 @@ export default function Profile() {
                 {/* Profile Detail Header */}
                 <div style={{ marginBottom: '1rem', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '0.75rem' }}>
                     <h3 style={{ fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '0.375rem', margin: 0 }}>
-                        <Settings size={16} style={{ color: 'hsl(var(--muted-foreground))' }} />
+                        <Gear size={16} style={{ color: 'hsl(var(--muted-foreground))' }} />
                         Personal Styling Info
                     </h3>
                 </div>
@@ -344,7 +361,7 @@ export default function Profile() {
                         <Heart size={16} className={isPrefsOpen ? 'fill-current' : ''} style={{ color: 'hsl(var(--accent))' }} />
                         <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Detailed Style Specs</span>
                     </div>
-                    <ChevronRight size={18} style={{ transform: isPrefsOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                    <CaretRight size={18} style={{ transform: isPrefsOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
                 </div>
 
                 <AnimatePresence>
@@ -497,7 +514,7 @@ export default function Profile() {
                     disabled={saving}
                     style={{ marginTop: '1.5rem' }}
                 >
-                    {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                    {saving ? <SpinnerGap size={16} className="animate-spin" /> : <Check size={16} />}
                     Save All Preferences
                 </button>
             </motion.div>
@@ -590,7 +607,7 @@ export default function Profile() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {loadingRequests ? (
                             <div style={{ padding: '2rem', textAlign: 'center' }}>
-                                <Loader2 size={24} className="animate-spin" style={{ color: 'hsl(var(--muted-foreground))' }} />
+                                <SpinnerGap size={24} className="animate-spin" style={{ color: 'hsl(var(--muted-foreground))' }} />
                             </div>
                         ) : (
                             requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).length === 0 ? (
@@ -677,7 +694,7 @@ export default function Profile() {
                 onClick={handleSignOut}
                 style={{ color: 'hsl(var(--destructive))' }}
             >
-                <LogOut size={16} />
+                <SignOut size={16} />
                 Sign Out
             </motion.button>
         </div>

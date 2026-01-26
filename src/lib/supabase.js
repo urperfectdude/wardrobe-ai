@@ -9,7 +9,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = supabaseUrl && supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey)
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+            storageKey: `sb-${supabaseUrl.replace('https://', '').split('.')[0]}-auth-token`,
+            storage: window?.localStorage
+        }
+    })
     : null
 
 // Check if Supabase is available

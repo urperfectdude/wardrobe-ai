@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Filter, Star, ExternalLink, X, SlidersHorizontal, AlertCircle, RefreshCw } from 'lucide-react'
+import { MagnifyingGlass, Funnel, Star, ArrowSquareOut, X, SlidersHorizontal, WarningCircle, ArrowCounterClockwise } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getProducts } from '../utils/storage'
 import { getProductUrl, PLATFORMS, STYLE_AESTHETICS } from '../utils/ecommerceSearch'
@@ -81,11 +81,11 @@ export default function Shop() {
         return (
             <div className="container">
                 <div className="empty-state" style={{ minHeight: '60vh' }}>
-                    <AlertCircle size={48} style={{ color: 'hsl(var(--destructive))' }} />
+                    <WarningCircle size={48} style={{ color: 'hsl(var(--destructive))' }} />
                     <h3>Something went wrong</h3>
                     <p>{error}</p>
                     <button className="btn btn-primary" onClick={fetchProducts}>
-                        <RefreshCw size={16} /> Try Again
+                        <ArrowCounterClockwise size={16} /> Try Again
                     </button>
                 </div>
             </div>
@@ -131,7 +131,7 @@ export default function Shop() {
             {/* Search Bar */}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                 <div style={{ flex: 1, position: 'relative' }}>
-                    <Search size={18} style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', color: 'hsl(var(--muted-foreground))' }} />
+                    <MagnifyingGlass size={18} style={{ position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', color: 'hsl(var(--muted-foreground))' }} />
                     <input
                         type="text"
                         className="input"
@@ -380,7 +380,7 @@ export default function Shop() {
                 </div>
             ) : products.length === 0 ? (
                 <div className="empty-state">
-                    <Filter className="empty-state-icon" />
+                    <Funnel className="empty-state-icon" />
                     <h3>No products found</h3>
                     <p>Try adjusting your filters</p>
                 </div>

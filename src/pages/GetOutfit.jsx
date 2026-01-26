@@ -1,14 +1,14 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Wand2, Shuffle, ShoppingBag, Sparkles, ArrowRight, X, Heart, Check, ExternalLink, Loader2, Shirt, Settings, Edit2 } from 'lucide-react'
+import { MagicWand, Shuffle, ShoppingBag, Sparkle, ArrowRight, X, Heart, Check, ArrowSquareOut, SpinnerGap, TShirt, Gear, PencilSimple, CaretDown, CaretUp, ClockCounterClockwise, BookmarkSimple } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getWardrobeItems, getProducts, savePreferences, getPreferences, saveOutfit, markOutfitAsSaved, getRecentOutfits, getSavedOutfits } from '../utils/storage'
 import { generateOutfit, OCCASION_CATEGORIES } from '../utils/outfitMatcher'
 import { EXISTING_CATEGORY4, EXISTING_COLORS, generateOutfitDescription } from '../utils/openaiAnalysis'
 import { useAuth } from '../contexts/AuthContext'
-import { ChevronDown, ChevronUp, History, Bookmark } from 'lucide-react'
 import OnboardingFlow from '../components/OnboardingFlow'
 import DualRangeSlider from '../components/DualRangeSlider'
+import ParameterSelector from '../components/ParameterSelector'
 
 const MOODS = [
     { id: 'party', label: 'Party' },
@@ -62,7 +62,7 @@ const HistoryCard = ({ outfit, onClick }) => {
                     <span style={{ fontSize: '0.8125rem', fontWeight: 600, textTransform: 'capitalize' }}>
                         {outfit.mood} Outfit
                     </span>
-                    {outfit.is_saved && <Bookmark size={12} style={{ fill: "currentColor", color: "hsl(var(--accent))" }} />}
+                    {outfit.is_saved && <BookmarkSimple size={12} weight="fill" style={{ fill: "currentColor", color: "hsl(var(--accent))" }} />}
                 </div>
 
                 <span style={{ fontSize: '0.75rem', color: 'hsl(var(--muted-foreground))' }}>
@@ -93,7 +93,7 @@ const HistoryCard = ({ outfit, onClick }) => {
                         }}
                         style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', color: 'hsl(var(--accent))', background: 'none', border: 'none', padding: 0, fontWeight: 600 }}
                     >
-                        <Sparkles size={10} />
+                        <Sparkle size={10} />
                         {expanded ? "Hide AI Analysis" : "Show AI Analysis"}
                     </button>
                     {expanded && (
@@ -385,7 +385,7 @@ export default function GetOutfit() {
                     className={`btn btn-sm ${source === 'closet' ? 'btn-primary' : 'btn-ghost'}`}
                     style={{ flex: 1, minHeight: '36px', fontSize: '0.75rem' }}
                 >
-                    <Shirt size={14} />
+                    <TShirt size={14} />
                     My Closet
                 </button>
                 <button
@@ -393,7 +393,7 @@ export default function GetOutfit() {
                     className={`btn btn-sm ${source === 'both' ? 'btn-primary' : 'btn-ghost'}`}
                     style={{ flex: 1, minHeight: '36px', fontSize: '0.75rem' }}
                 >
-                    <Sparkles size={14} />
+                    <Sparkle size={14} />
                     Both
                 </button>
                 <button
@@ -412,7 +412,7 @@ export default function GetOutfit() {
                 onClick={() => setShowPreferences(true)}
                 style={{ marginBottom: '1rem', gap: '0.375rem' }}
             >
-                <Settings size={14} />
+                <Gear size={14} />
                 Set Style Preferences
             </button>
 
@@ -431,7 +431,7 @@ export default function GetOutfit() {
                         marginBottom: '1rem'
                     }}
                 >
-                    <Sparkles size={28} style={{ color: 'hsl(var(--accent))', marginBottom: '0.75rem' }} />
+                    <Sparkle size={28} style={{ color: 'hsl(var(--accent))', marginBottom: '0.75rem' }} />
                     <h3 style={{ marginBottom: '0.375rem', fontSize: '1rem' }}>No Items in Closet</h3>
                     <p className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>
                         Add items to your closet or check the shop
@@ -495,12 +495,12 @@ export default function GetOutfit() {
                 >
                     {isGenerating ? (
                         <>
-                            <Loader2 size={18} className="animate-spin" />
+                            <SpinnerGap size={18} className="animate-spin" />
                             Styling...
                         </>
                     ) : (
                         <>
-                            <Wand2 size={18} />
+                            <MagicWand size={18} />
                             Generate Outfit
                         </>
                     )}
@@ -534,7 +534,7 @@ export default function GetOutfit() {
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                                        <Sparkles size={14} style={{ color: 'hsl(var(--accent))' }} />
+                                        <Sparkle size={14} style={{ color: 'hsl(var(--accent))' }} />
                                         <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
                                             {MOODS.find(o => o.id === outfit.mood)?.label || outfit.mood} Look
                                         </span>
@@ -570,7 +570,7 @@ export default function GetOutfit() {
                                             disabled={isSavingOutfit || !activeOutfitId}
                                             style={{ fontSize: '0.75rem' }}
                                         >
-                                            {isSavingOutfit ? <Loader2 size={13} className="animate-spin" /> : <Bookmark size={13} />}
+                                            {isSavingOutfit ? <SpinnerGap size={13} className="animate-spin" /> : <BookmarkSimple size={13} />}
                                             Save Outfit
                                         </button>
                                     )}
@@ -649,7 +649,7 @@ export default function GetOutfit() {
                                                         alignItems: 'center',
                                                         gap: '0.125rem'
                                                     }}>
-                                                        <Shirt size={10} />
+                                                        <TShirt size={10} />
                                                         My Closet
                                                     </div>
                                                 )}
@@ -729,7 +729,7 @@ export default function GetOutfit() {
                                                             gap: '0.25rem'
                                                         }}
                                                     >
-                                                        <ExternalLink size={12} />
+                                                        <ArrowSquareOut size={12} />
                                                         Buy Now
                                                     </a>
                                                 ) : (
@@ -754,7 +754,7 @@ export default function GetOutfit() {
                                                                 minHeight: '32px'
                                                             }}
                                                         >
-                                                            <Edit2 size={14} />
+                                                            <PencilSimple size={14} />
                                                         </button>
                                                     </div>
                                                 )}
@@ -772,10 +772,10 @@ export default function GetOutfit() {
                                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', fontSize: '0.8125rem', fontWeight: 600, color: 'hsl(var(--foreground))', cursor: 'pointer' }}
                                     >
                                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <Sparkles size={14} className="text-accent" />
+                                            <Sparkle size={14} className="text-accent" />
                                             Why this outfit?
                                         </span>
-                                        {isDescriptionOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                        {isDescriptionOpen ? <CaretUp size={16} /> : <CaretDown size={16} />}
                                     </button>
                                     <AnimatePresence>
                                         {isDescriptionOpen && (
@@ -807,7 +807,7 @@ export default function GetOutfit() {
                             animate={{ opacity: 1 }}
                             className="empty-state"
                         >
-                            <Wand2 className="empty-state-icon" />
+                            <MagicWand className="empty-state-icon" />
                             <h3>Select a mood</h3>
                             <p className="text-sm">AI will style you from {source === 'closet' ? 'your closet' : source === 'shop' ? 'shop items' : 'closet + shop'}</p>
                         </motion.div>
@@ -825,7 +825,7 @@ export default function GetOutfit() {
 
                         <OutfitList
                             title="Recent Generations"
-                            icon={History}
+                            icon={ClockCounterClockwise}
                             outfits={recentOutfits}
                             emptyMsg="Your styling history will appear here."
                             onOutfitClick={handleOutfitClick}
@@ -1015,7 +1015,7 @@ export default function GetOutfit() {
                                 onClick={handleSavePreferences}
                                 disabled={savingPrefs}
                             >
-                                {savingPrefs ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                                {savingPrefs ? <SpinnerGap size={16} className="animate-spin" /> : <Check size={16} />}
                                 Save Preferences
                             </button>
 

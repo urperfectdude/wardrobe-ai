@@ -138,14 +138,34 @@ export function AuthProvider({ children }) {
     }
 
     const handleSignOut = async () => {
+        // Clear state immediately (don't wait for API)
+        setUser(null)
+        setUserProfile(null)
+        setSession(null)
+
+        // Clear localStorage manually (in case Supabase client hangs)
         try {
-            await supabaseSignOut()
-            setUser(null)
-            setUserProfile(null)
-            setSession(null)
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+            if (supabaseUrl) {
+                const projectRef = supabaseUrl.replace('https://', '').split('.')[0]
+                const key = `sb-${projectRef}-auth-token`
+                localStorage.removeItem(key)
+                console.log('Cleared auth token from localStorage')
+            }
+        } catch (e) {
+            console.warn('Error clearing localStorage:', e)
+        }
+
+        // Try to sign out via Supabase with timeout (don't block on this)
+        try {
+            const signOutPromise = supabaseSignOut()
+            const timeoutPromise = new Promise((resolve) =>
+                setTimeout(() => resolve({ error: new Error('SignOut timeout') }), 2000)
+            )
+            await Promise.race([signOutPromise, timeoutPromise])
         } catch (error) {
-            console.error('Error signing out:', error)
-            throw error
+            console.error('Error during Supabase signOut:', error)
+            // Don't throw - user is already logged out locally
         }
     }
 

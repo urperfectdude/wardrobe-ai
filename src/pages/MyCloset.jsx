@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Upload, X, Shirt, Trash2, Sparkles, Loader2, AlertCircle, RefreshCw, ChevronDown, Edit2 } from 'lucide-react'
+import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     getWardrobeItems,
@@ -192,11 +192,11 @@ export default function MyCloset() {
         return (
             <div className="container">
                 <div className="empty-state" style={{ minHeight: '60vh' }}>
-                    <AlertCircle size={48} style={{ color: 'hsl(var(--destructive))' }} />
+                    <WarningCircle size={48} style={{ color: 'hsl(var(--destructive))' }} />
                     <h3>Something went wrong</h3>
                     <p>{error}</p>
                     <button className="btn btn-primary" onClick={loadItems}>
-                        <RefreshCw size={16} /> Try Again
+                        <ArrowCounterClockwise size={16} /> Try Again
                     </button>
                 </div>
             </div>
@@ -238,7 +238,7 @@ export default function MyCloset() {
                 style={{ marginBottom: '1.5rem' }}
             >
                 <input type="file" accept="image/*" onChange={(e) => handleFileSelect(e.target.files[0])} />
-                <Upload className="dropzone-icon" />
+                <UploadSimple className="dropzone-icon" />
                 <div className="dropzone-text">
                     <h4>Drop clothes here</h4>
                     <p>AI detects color, style & issues</p>
@@ -280,7 +280,7 @@ export default function MyCloset() {
                                 <img src={uploadPreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 {analyzing && (
                                     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: 'white' }}>
-                                        <Loader2 size={28} className="animate-spin" />
+                                        <SpinnerGap size={28} className="animate-spin" />
                                         <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>AI Analyzing...</span>
                                         <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>Detecting attributes</span>
                                     </div>
@@ -290,7 +290,7 @@ export default function MyCloset() {
                             {/* AI Detection Badge */}
                             {!analyzing && (analysis.title || analysis.color) && (
                                 <div style={{ background: 'hsl(var(--green-100))', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                                    <Sparkles size={14} style={{ color: 'hsl(var(--accent))' }} />
+                                    <Sparkle size={14} style={{ color: 'hsl(var(--accent))' }} />
                                     <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'hsl(var(--accent))' }}>AI Detected - Edit below if needed</span>
                                 </div>
                             )}
@@ -298,7 +298,7 @@ export default function MyCloset() {
                             {/* Issue Warning */}
                             {analysis.issue && analysis.issue.toLowerCase() !== 'none' && (
                                 <div style={{ background: 'hsl(0 84% 95%)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                                    <AlertCircle size={14} style={{ color: 'hsl(0 84% 50%)' }} />
+                                    <WarningCircle size={14} style={{ color: 'hsl(0 84% 50%)' }} />
                                     <span style={{ fontSize: '0.75rem', color: 'hsl(0 84% 40%)' }}>{analysis.issue}</span>
                                 </div>
                             )}
@@ -306,7 +306,7 @@ export default function MyCloset() {
                             {/* Save Error */}
                             {saveError && (
                                 <div style={{ background: 'hsl(0 84% 95%)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                                    <AlertCircle size={14} style={{ color: 'hsl(0 84% 50%)' }} />
+                                    <WarningCircle size={14} style={{ color: 'hsl(0 84% 50%)' }} />
                                     <span style={{ fontSize: '0.75rem', color: 'hsl(0 84% 40%)' }}>{saveError}</span>
                                 </div>
                             )}
@@ -355,7 +355,7 @@ export default function MyCloset() {
                                                 <option key={brand} value={brand}>{brand}</option>
                                             ))}
                                         </select>
-                                        <ChevronDown size={14} style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.5 }} />
+                                        <CaretDown size={14} style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.5 }} />
                                     </div>
                                 </div>
 
@@ -461,13 +461,9 @@ export default function MyCloset() {
                                 disabled={!analysis.category3 || !analysis.color || saving || analyzing}
                                 style={{ marginTop: '1rem' }}
                             >
-                                {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><Shirt size={16} /> Add to Closet</>}
+                                {saving ? <><SpinnerGap size={16} className="animate-spin" /> Saving...</> : <><TShirt size={16} /> Add to Closet</>}
                             </button>
 
-                            {/* Required fields note */}
-                            <p style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))', textAlign: 'center', marginTop: '0.5rem' }}>
-                                * Color and Apparel Type are required
-                            </p>
                         </motion.div>
                     </motion.div>
                 )}
@@ -495,7 +491,7 @@ export default function MyCloset() {
             {/* Closet Grid */}
             {filteredItems.length === 0 ? (
                 <div className="empty-state">
-                    <Shirt className="empty-state-icon" />
+                    <TShirt className="empty-state-icon" />
                     <h3>Your closet is empty</h3>
                     <p>Upload clothes to get AI-powered styling</p>
                 </div>
@@ -542,7 +538,7 @@ export default function MyCloset() {
                                     }}
                                     onClick={() => handleDeleteClick(item.id)}
                                 >
-                                    <Trash2 size={20} />
+                                    <Trash size={20} />
                                 </button>
                             </div>
 
@@ -616,7 +612,7 @@ export default function MyCloset() {
                                             minHeight: 'unset'
                                         }}
                                     >
-                                        <Edit2 size={14} />
+                                        <PencilSimple size={14} />
                                     </button>
                                 </div>
                             </div>
