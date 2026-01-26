@@ -249,20 +249,25 @@ export default function GetOutfit() {
                 }
                 setOutfit(newOutfit)
 
-                // Get AI Description & Auto-Save to History
+                // 2. Get AI Description (Try first, but don't block saving)
+                let desc = ''
                 try {
-                    const desc = await generateOutfitDescription(mood, outfitItems)
+                    desc = await generateOutfitDescription(mood, outfitItems)
                     setOutfitDescription(desc)
-                    setIsDescriptionOpen(true) // Expand by default
+                    setIsDescriptionOpen(true)
+                } catch (err) {
+                    console.error("Error generating description:", err)
+                }
 
-                    // Auto-save to 'Recent' history
+                // 3. Auto-save to 'Recent' history (Always)
+                try {
                     const saved = await saveOutfit({ ...newOutfit, description: desc }, false, false)
                     if (saved) {
                         setActiveOutfitId(saved.id)
                         await refreshLists()
                     }
                 } catch (err) {
-                    console.error("Error in post-generation:", err)
+                    console.error("Error auto-saving outfit:", err)
                 }
             } else {
                 setOutfit(null)
