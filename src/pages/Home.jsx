@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Sparkle, TShirt, MagicWand, ShoppingBag, ArrowRight, UploadSimple, Brain, Storefront, Heart } from '@phosphor-icons/react'
+import { Sparkle, TShirt, MagicWand, ShoppingBag, ArrowRight, UploadSimple, Lightning, Storefront, Heart } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getPublicOutfits } from '../utils/storage'
 import { useAuth } from '../contexts/AuthContext'
@@ -15,20 +15,37 @@ export default function Home() {
     const [selectedOutfit, setSelectedOutfit] = useState(null)
     const [showLogin, setShowLogin] = useState(false)
     const [pendingMood, setPendingMood] = useState(null)
+    const [offset, setOffset] = useState(0)
+    const [hasMore, setHasMore] = useState(true)
+    const LIMIT = 8
+
+    async function fetchOutfits(newOffset = 0) {
+        try {
+            setLoadingOutfits(true)
+            const outfits = await getPublicOutfits(LIMIT, newOffset)
+
+            if (newOffset === 0) {
+                setPublicOutfits(outfits)
+            } else {
+                setPublicOutfits(prev => [...prev, ...outfits])
+            }
+
+            setHasMore(outfits.length === LIMIT)
+            setOffset(newOffset)
+        } catch (error) {
+            console.error('Error fetching public outfits:', error)
+        } finally {
+            setLoadingOutfits(false)
+        }
+    }
 
     useEffect(() => {
-        async function fetchOutfits() {
-            try {
-                const outfits = await getPublicOutfits(8)
-                setPublicOutfits(outfits)
-            } catch (error) {
-                console.error('Error fetching public outfits:', error)
-            } finally {
-                setLoadingOutfits(false)
-            }
-        }
-        fetchOutfits()
+        fetchOutfits(0)
     }, [])
+
+    const handleLoadMore = () => {
+        fetchOutfits(offset + LIMIT)
+    }
 
     const features = [
         {
@@ -37,7 +54,7 @@ export default function Home() {
             description: 'Snap photos of your clothes and build your digital wardrobe.'
         },
         {
-            icon: Brain,
+            icon: Lightning,
             title: 'AI Styling',
             description: 'Get outfit suggestions based on occasion and color theory.'
         },
@@ -286,7 +303,7 @@ export default function Home() {
                         Tell us your preferences for better recommendations
                     </p>
                     <Link to="/outfit?preferences=true" className="btn btn-primary btn-sm">
-                        <Sparkles size={14} />
+                        <Sparkle size={14} />
                         Set Preferences
                     </Link>
                 </motion.div>
@@ -300,7 +317,7 @@ export default function Home() {
                         <Link to="/outfit" style={{ fontSize: '0.75rem', color: 'hsl(var(--accent))', fontWeight: 600, textDecoration: 'none' }}>View All</Link>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         {publicOutfits.map((outfit) => (
                             <motion.div
                                 key={outfit.id}
@@ -315,95 +332,121 @@ export default function Home() {
                                     boxShadow: 'var(--shadow-sm)'
                                 }}
                             >
-                                {/* User Info */}
+                                {/* Header */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
                                     {outfit.user_profiles?.avatar_url ? (
                                         <img
                                             src={outfit.user_profiles.avatar_url}
                                             alt=""
-                                            style={{ width: '32px', height: '32px', borderRadius: '50%' }}
+                                            style={{ width: '40px', height: '40px', borderRadius: '50%' }}
                                         />
                                     ) : (
                                         <div style={{
-                                            width: '32px', height: '32px', borderRadius: '50%',
+                                            width: '40px', height: '40px', borderRadius: '50%',
                                             background: 'hsl(var(--accent))', color: 'white',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: '0.75rem', fontWeight: 600
+                                            fontSize: '1rem', fontWeight: 600
                                         }}>
                                             {(outfit.user_profiles?.name?.[0] || outfit.user_profiles?.username?.[0] || 'U').toUpperCase()}
                                         </div>
                                     )}
-                                    <div style={{ flex: 1 }}>
-                                        <p style={{ fontSize: '0.8125rem', fontWeight: 700, margin: 0 }}>
-                                            {outfit.user_profiles?.name || outfit.user_profiles?.username || 'Anonymous User'}
-                                        </p>
-                                        <p style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
-                                            Created a <span style={{ textTransform: 'capitalize', color: 'hsl(var(--foreground))', fontWeight: 600 }}>{outfit.mood}</span> outfit
+                                    <div>
+                                        <p style={{ fontSize: '0.9375rem', margin: 0 }}>
+                                            <span style={{ fontWeight: 700 }}>
+                                                {outfit.user_profiles?.name || outfit.user_profiles?.username || 'Anonymous User'}
+                                            </span>
+                                            <span style={{ color: 'hsl(var(--muted-foreground))' }}> created </span>
+                                            <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>
+                                                {outfit.mood}
+                                            </span>
+                                            <span style={{ color: 'hsl(var(--muted-foreground))' }}> outfit</span>
                                         </p>
                                     </div>
                                 </div>
 
-                                {/* Liked Items Grid */}
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', marginBottom: '1rem' }}>
-                                    {outfit.items.filter(item => item.liked).slice(0, 4).map((item, i) => (
-                                        <div key={i} style={{
-                                            position: 'relative',
-                                            aspectRatio: '1/1',
-                                            borderRadius: 'var(--radius-lg)',
-                                            overflow: 'hidden',
-                                            border: '1px solid hsl(var(--border))'
-                                        }}>
-                                            <img
-                                                src={item.image}
-                                                alt=""
-                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                            />
-                                            <div style={{
-                                                position: 'absolute',
-                                                bottom: 0, left: 0, right: 0,
-                                                padding: '0.375rem',
-                                                background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-                                                color: 'white'
+                                {/* Horizontal Items Strip with Fade & CTA */}
+                                <div style={{ position: 'relative', height: '120px' }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '0.5rem',
+                                        overflowX: 'auto',
+                                        height: '100%',
+                                        scrollbarWidth: 'none', // Hide scrollbar
+                                        paddingRight: '120px' // Space for fade
+                                    }}>
+                                        {outfit.items.map((item, i) => (
+                                            <div key={i} style={{
+                                                position: 'relative',
+                                                height: '100%',
+                                                aspectRatio: '1/1',
+                                                borderRadius: 'var(--radius-lg)',
+                                                overflow: 'hidden',
+                                                border: '1px solid hsl(var(--border))',
+                                                flexShrink: 0
                                             }}>
-                                                <div style={{
-                                                    fontSize: '0.5rem',
-                                                    fontWeight: 700,
-                                                    background: item.source === 'closet' ? 'hsl(142 71% 45%)' : 'hsl(220 60% 50%)',
-                                                    display: 'inline-block',
-                                                    padding: '1px 4px',
-                                                    borderRadius: '2px',
-                                                    marginBottom: '2px'
-                                                }}>
-                                                    {item.source === 'closet' ? 'PRELOVED' : (item.platform || 'SHOP')}
-                                                </div>
-                                                <div style={{ fontSize: '0.625rem', fontWeight: 500 }}>
-                                                    {item.title || item.name}
-                                                </div>
+                                                <img
+                                                    src={item.image}
+                                                    alt=""
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                />
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                        ))}
+                                    </div>
 
-                                {/* Main Actions */}
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                    <button
-                                        className="btn btn-outline btn-sm"
-                                        style={{ flex: 1, fontSize: '0.75rem', minHeight: '36px' }}
-                                        onClick={() => navigate(`/outfit?mood=${outfit.mood}`)}
-                                    >
-                                        Try Similar
-                                    </button>
-                                    <button
-                                        className="btn btn-primary btn-sm"
-                                        style={{ flex: 1, fontSize: '0.75rem', minHeight: '36px' }}
-                                        onClick={() => setSelectedOutfit(outfit)}
-                                    >
-                                        View Details
-                                    </button>
+                                    {/* Fade Overlay & CTA */}
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        right: 0,
+                                        bottom: 0,
+                                        width: '200px',
+                                        background: 'linear-gradient(to right, transparent, hsl(var(--card)) 40%)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        paddingLeft: '2rem'
+                                    }}>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <button
+                                                className="btn btn-outline btn-sm"
+                                                style={{ whiteSpace: 'nowrap' }}
+                                                onClick={() => handleMoodSelect(outfit.mood)}
+                                            >
+                                                Try Similar
+                                            </button>
+                                            <button
+                                                className="btn btn-primary btn-sm"
+                                                style={{ whiteSpace: 'nowrap' }}
+                                                onClick={() => setSelectedOutfit(outfit)}
+                                            >
+                                                View Details
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </motion.div>
                         ))}
                     </div>
+
+                    {hasMore && (
+                        <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+                            <button
+                                className="btn btn-outline"
+                                onClick={handleLoadMore}
+                                disabled={loadingOutfits}
+                                style={{ minWidth: '150px' }}
+                            >
+                                {loadingOutfits ? (
+                                    <Sparkle className="animate-spin" size={16} />
+                                ) : (
+                                    <>
+                                        Load More
+                                        <ArrowRight size={16} style={{ transform: 'rotate(90deg)' }} />
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    )}
                 </section>
             )}
 

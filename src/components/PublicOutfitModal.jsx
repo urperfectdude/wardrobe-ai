@@ -97,8 +97,18 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                                 padding: item.liked ? '0.75rem' : '0.25rem',
                                 borderRadius: 'var(--radius-xl)',
                                 border: item.liked ? '1px solid hsl(var(--border))' : 'none',
-                                opacity: item.liked ? 1 : 0.6
-                            }}>
+                                opacity: item.liked ? 1 : 0.6,
+                                cursor: 'pointer',
+                                transition: 'opacity 0.2s',
+                            }}
+                                onClick={() => {
+                                    if (item.source === 'shop' && item.url) {
+                                        window.open(item.url, '_blank', 'noopener,noreferrer');
+                                    } else {
+                                        setSelectedItem(item);
+                                        setShowOfferModal(true);
+                                    }
+                                }}>
                                 <div style={{ position: 'relative', width: '100px', height: '100px', flexShrink: 0 }}>
                                     <img
                                         src={item.image}
@@ -144,16 +154,17 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                                     </h3>
 
                                     {item.source === 'shop' ? (
-                                        <a
-                                            href={item.url || '#'}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
+                                        <button
                                             className="btn btn-primary btn-sm"
                                             style={{ width: 'fit-content', fontSize: '0.75rem', minHeight: '32px' }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.open(item.url || '#', '_blank', 'noopener,noreferrer');
+                                            }}
                                         >
                                             <ShoppingBag size={14} />
                                             Buy Now
-                                        </a>
+                                        </button>
                                     ) : (
                                         <button
                                             className="btn btn-outline btn-sm"

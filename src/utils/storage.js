@@ -529,13 +529,14 @@ export async function getOutfitHistory() {
     return getRecentOutfits()
 }
 
-export async function getPublicOutfits(limit = 10) {
+export async function getPublicOutfits(limit = 10, offset = 0) {
     try {
         // This requires a join with user_profiles. REST API can do this with select=*,user_profiles(...) syntax
         // user_profiles must be a relationship
 
         const data = await supabaseFetch('saved_outfits', {
-            query: `select=*,user_profiles(username,avatar_url,name)&is_public=eq.true&is_saved=eq.true&order=created_at.desc&limit=${limit}`
+            query: `select=*,user_profiles(username,avatar_url,name)&is_public=eq.true&is_saved=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
+            skipAuth: true
         })
         return data || []
     } catch (error) {
