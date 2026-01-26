@@ -304,6 +304,8 @@ export async function savePreferences(prefs) {
             fit_type: prefs.fitType || [],
             preferred_styles: prefs.preferredStyles || [],
             materials: prefs.materials || [],
+            body_type: prefs.bodyType || '',
+            gender: prefs.gender || '',
             updated_at: new Date().toISOString()
         }
 
@@ -352,7 +354,9 @@ export async function getPreferences() {
                 budget: prefs.budget || [500, 5000],
                 fitType: prefs.fit_type || [],
                 preferredStyles: prefs.preferred_styles || [],
-                materials: prefs.materials || []
+                materials: prefs.materials || [],
+                bodyType: prefs.body_type || '',
+                gender: prefs.gender || ''
             }
         } catch (e) {
             // If 406 or empty
@@ -372,7 +376,9 @@ function getDefaultPreferences() {
         budget: [500, 5000],
         fitType: [],
         preferredStyles: [],
-        materials: []
+        materials: [],
+        bodyType: '',
+        gender: ''
     }
 }
 

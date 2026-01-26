@@ -21,6 +21,7 @@ export default function Profile() {
     const [savedOutfits, setSavedOutfits] = useState([])
     const [loadingRequests, setLoadingRequests] = useState(true)
     const [activeTab, setActiveTab] = useState('outfits') // 'outfits' or 'selling' or 'buying'
+    const [isPrefsOpen, setIsPrefsOpen] = useState(false)
 
     const [profile, setProfile] = useState({
         name: '',
@@ -34,7 +35,9 @@ export default function Profile() {
         budget: [500, 5000],
         fitType: [],
         preferredStyles: [],
-        materials: []
+        materials: [],
+        bodyType: '',
+        gender: ''
     })
 
     useEffect(() => {
@@ -44,7 +47,6 @@ export default function Profile() {
                 username: userProfile.username || ''
             })
         }
-        loadPreferences()
         loadPreferences()
         loadRequests()
         loadSavedOutfits()
@@ -271,8 +273,7 @@ export default function Profile() {
                 )}
             </motion.div>
 
-            {/* Style Preferences */}
-            {/* Style Preferences */}
+            {/* Personal Info & Style Specs */}
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -285,149 +286,222 @@ export default function Profile() {
                     border: '1px solid hsl(var(--border))'
                 }}
             >
-                <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                {/* Profile Detail Header */}
+                <div style={{ marginBottom: '1rem', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '0.75rem' }}>
                     <h3 style={{ fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '0.375rem', margin: 0 }}>
-                        <Heart size={16} style={{ color: 'hsl(var(--accent))' }} />
-                        Style Preferences
+                        <Settings size={16} style={{ color: 'hsl(var(--muted-foreground))' }} />
+                        Personal Styling Info
                     </h3>
+                </div>
 
-                    {/* Thrift Preference */}
-                    <div style={{ display: 'flex', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-sm)', padding: '2px' }}>
-                        {['new', 'both', 'thrifted'].map(opt => (
-                            <button
-                                key={opt}
-                                className={`btn btn-sm ${preferences.thriftPreference === opt ? 'btn-white shadow-sm' : 'btn-ghost'}`}
-                                onClick={() => setPreferences(prev => ({ ...prev, thriftPreference: opt }))}
-                                style={{
-                                    textTransform: 'capitalize',
-                                    padding: '2px 8px',
-                                    fontSize: '0.625rem',
-                                    height: '24px',
-                                    color: preferences.thriftPreference === opt ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))'
-                                }}
-                            >
-                                {opt}
-                            </button>
-                        ))}
+                {/* Personal Info Fields */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                    <div>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Body Type</label>
+                        <select
+                            className="input"
+                            value={preferences.bodyType}
+                            onChange={(e) => setPreferences(prev => ({ ...prev, bodyType: e.target.value }))}
+                            style={{ fontSize: '0.8125rem', padding: '0.5rem 0.75rem', height: 'auto', minHeight: 'unset' }}
+                        >
+                            <option value="">Select...</option>
+                            {BODY_TYPES.map(type => (
+                                <option key={type} value={type}>{type}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Gender / Persona</label>
+                        <select
+                            className="input"
+                            value={preferences.gender}
+                            onChange={(e) => setPreferences(prev => ({ ...prev, gender: e.target.value }))}
+                            style={{ fontSize: '0.8125rem', padding: '0.5rem 0.75rem', height: 'auto', minHeight: 'unset' }}
+                        >
+                            <option value="">Select...</option>
+                            <option value="Men">Men</option>
+                            <option value="Women">Women</option>
+                            <option value="Unisex">Unisex</option>
+                        </select>
                     </div>
                 </div>
 
-                {/* Preferred Styles */}
-                <div style={{ marginBottom: '1rem' }}>
-                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Styles</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '80px', overflowY: 'auto' }}>
-                        {EXISTING_CATEGORY4.slice(0, 15).map(style => (
-                            <button
-                                key={style}
-                                type="button"
-                                className={`chip chip-outline ${preferences.preferredStyles?.includes(style) ? 'active' : ''}`}
-                                onClick={() => togglePreference('preferredStyles', style)}
-                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                            >
-                                {style}
-                            </button>
-                        ))}
+                {/* Collapsible Style Specs */}
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        padding: '0.75rem',
+                        background: 'hsl(var(--secondary))',
+                        borderRadius: 'var(--radius-md)',
+                        transition: 'background 0.2s'
+                    }}
+                    onClick={() => setIsPrefsOpen(!isPrefsOpen)}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Heart size={16} className={isPrefsOpen ? 'fill-current' : ''} style={{ color: 'hsl(var(--accent))' }} />
+                        <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Detailed Style Specs</span>
                     </div>
+                    <ChevronRight size={18} style={{ transform: isPrefsOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
                 </div>
 
-                {/* Fit Type */}
-                <div style={{ marginBottom: '1rem' }}>
-                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Fit Type</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                        {['Slim', 'Regular', 'Relaxed', 'Oversized', 'Loose', 'Athletic'].map(type => (
-                            <button
-                                key={type}
-                                type="button"
-                                className={`chip chip-outline ${preferences.fitType?.includes(type) ? 'active' : ''}`}
-                                onClick={() => togglePreference('fitType', type)}
-                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                            >
-                                {type}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                <AnimatePresence>
+                    {isPrefsOpen && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            style={{ overflow: 'hidden' }}
+                        >
+                            <div style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
-                {/* Sizes */}
-                <div style={{ marginBottom: '1rem' }}>
-                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Sizes</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                        {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map(size => (
-                            <button
-                                key={size}
-                                type="button"
-                                className={`chip chip-outline ${preferences.sizes?.includes(size) ? 'active' : ''}`}
-                                onClick={() => togglePreference('sizes', size)}
-                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px', minWidth: '32px', justifyContent: 'center' }}
-                            >
-                                {size}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                                {/* Thrift Preference */}
+                                <div>
+                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>Shopping Preference</label>
+                                    <div style={{ display: 'flex', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-sm)', padding: '2px' }}>
+                                        {['new', 'both', 'thrifted'].map(opt => (
+                                            <button
+                                                key={opt}
+                                                className={`btn btn-sm ${preferences.thriftPreference === opt ? 'btn-white shadow-sm' : 'btn-ghost'}`}
+                                                onClick={() => setPreferences(prev => ({ ...prev, thriftPreference: opt }))}
+                                                style={{
+                                                    flex: 1,
+                                                    textTransform: 'capitalize',
+                                                    padding: '2px 8px',
+                                                    fontSize: '0.6875rem',
+                                                    height: '28px',
+                                                    minHeight: 'unset',
+                                                    color: preferences.thriftPreference === opt ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))'
+                                                }}
+                                            >
+                                                {opt}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
-                {/* Preferred Colors */}
-                <div style={{ marginBottom: '1rem' }}>
-                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Colors</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                        {EXISTING_COLORS.slice(0, 12).map(color => (
-                            <button
-                                key={color}
-                                type="button"
-                                className={`chip chip-outline ${preferences.preferredColors?.includes(color) ? 'active' : ''}`}
-                                onClick={() => togglePreference('preferredColors', color)}
-                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                            >
-                                {color}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                                {/* Preferred Styles */}
+                                <div>
+                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Styles</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '100px', overflowY: 'auto' }}>
+                                        {EXISTING_CATEGORY4.slice(0, 20).map(style => (
+                                            <button
+                                                key={style}
+                                                type="button"
+                                                className={`chip chip-outline ${preferences.preferredStyles?.includes(style) ? 'active' : ''}`}
+                                                onClick={() => togglePreference('preferredStyles', style)}
+                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                                            >
+                                                {style}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
-                {/* Materials */}
-                <div style={{ marginBottom: '1rem' }}>
-                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Materials</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                        {['Cotton', 'Polyester', 'Silk', 'Denim', 'Wool', 'Linen', 'Leather', 'Velvet', 'Satin', 'Rayon', 'Nylon'].map(mat => (
-                            <button
-                                key={mat}
-                                type="button"
-                                className={`chip chip-outline ${preferences.materials?.includes(mat) ? 'active' : ''}`}
-                                onClick={() => togglePreference('materials', mat)}
-                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                            >
-                                {mat}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                                {/* Fit Type */}
+                                <div>
+                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Fit Type</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                        {['Slim', 'Regular', 'Relaxed', 'Oversized', 'Loose', 'Athletic'].map(type => (
+                                            <button
+                                                key={type}
+                                                type="button"
+                                                className={`chip chip-outline ${preferences.fitType?.includes(type) ? 'active' : ''}`}
+                                                onClick={() => togglePreference('fitType', type)}
+                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                                            >
+                                                {type}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
-                {/* Budget Slider */}
-                <div style={{ marginBottom: '1.25rem' }}>
-                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
-                        Budget Range
-                    </label>
-                    <DualRangeSlider
-                        min={0}
-                        max={20000}
-                        step={500}
-                        value={Array.isArray(preferences.budget) ? preferences.budget : [500, 5000]}
-                        onChange={(newBudget) => setPreferences(prev => ({
-                            ...prev,
-                            budget: newBudget
-                        }))}
-                    />
-                </div>
+                                {/* Sizes */}
+                                <div>
+                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Sizes</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                        {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map(size => (
+                                            <button
+                                                key={size}
+                                                type="button"
+                                                className={`chip chip-outline ${preferences.sizes?.includes(size) ? 'active' : ''}`}
+                                                onClick={() => togglePreference('sizes', size)}
+                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px', minWidth: '32px', justifyContent: 'center' }}
+                                            >
+                                                {size}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Preferred Colors */}
+                                <div>
+                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Colors</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                        {EXISTING_COLORS.slice(0, 15).map(color => (
+                                            <button
+                                                key={color}
+                                                type="button"
+                                                className={`chip chip-outline ${preferences.preferredColors?.includes(color) ? 'active' : ''}`}
+                                                onClick={() => togglePreference('preferredColors', color)}
+                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                                            >
+                                                {color}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Materials */}
+                                <div>
+                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Materials</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                        {['Cotton', 'Polyester', 'Silk', 'Denim', 'Wool', 'Linen', 'Leather', 'Velvet', 'Satin', 'Rayon', 'Nylon'].map(mat => (
+                                            <button
+                                                key={mat}
+                                                type="button"
+                                                className={`chip chip-outline ${preferences.materials?.includes(mat) ? 'active' : ''}`}
+                                                onClick={() => togglePreference('materials', mat)}
+                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
+                                            >
+                                                {mat}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Budget Slider */}
+                                <div>
+                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>Budget Range (₹)</label>
+                                    <DualRangeSlider
+                                        min={0}
+                                        max={20000}
+                                        step={500}
+                                        value={Array.isArray(preferences.budget) ? preferences.budget : [500, 5000]}
+                                        onChange={(newBudget) => setPreferences(prev => ({
+                                            ...prev,
+                                            budget: newBudget
+                                        }))}
+                                    />
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 <button
                     className="btn btn-primary w-full"
                     onClick={handleSaveProfile}
                     disabled={saving}
+                    style={{ marginTop: '1.5rem' }}
                 >
                     {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                    Save Preferences
+                    Save All Preferences
                 </button>
             </motion.div>
+
 
             {/* Content Tabs */}
             <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
@@ -609,3 +683,4 @@ export default function Profile() {
         </div>
     )
 }
+
