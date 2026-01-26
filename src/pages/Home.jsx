@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Sparkles, Shirt, Wand2, ShoppingBag, ArrowRight, Upload, Brain, Store, Heart } from 'lucide-react'
+import { Sparkle, TShirt, MagicWand, ShoppingBag, ArrowRight, UploadSimple, Brain, Storefront, Heart } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getPublicOutfits } from '../utils/storage'
+import { useAuth } from '../contexts/AuthContext'
+import OnboardingFlow from '../components/OnboardingFlow'
 import PublicOutfitModal from '../components/PublicOutfitModal'
 
 export default function Home() {
     const navigate = useNavigate()
+    const { user, loading: authLoading } = useAuth()
     const [publicOutfits, setPublicOutfits] = useState([])
     const [loadingOutfits, setLoadingOutfits] = useState(true)
     const [selectedOutfit, setSelectedOutfit] = useState(null)
+    const [showLogin, setShowLogin] = useState(false)
+    const [pendingMood, setPendingMood] = useState(null)
 
     useEffect(() => {
         async function fetchOutfits() {
@@ -27,7 +32,7 @@ export default function Home() {
 
     const features = [
         {
-            icon: Upload,
+            icon: UploadSimple,
             title: 'Upload Clothes',
             description: 'Snap photos of your clothes and build your digital wardrobe.'
         },
@@ -37,7 +42,7 @@ export default function Home() {
             description: 'Get outfit suggestions based on occasion and color theory.'
         },
         {
-            icon: Store,
+            icon: Storefront,
             title: 'Shop Smart',
             description: 'Find pieces from Myntra, Ajio, Amazon & more.'
         }
@@ -53,7 +58,20 @@ export default function Home() {
     ]
 
     const handleMoodSelect = (moodId) => {
+        if (!user) {
+            setPendingMood(moodId)
+            setShowLogin(true)
+            return
+        }
         navigate(`/outfit?mood=${moodId}`)
+    }
+
+    const handleLoginComplete = () => {
+        setShowLogin(false)
+        if (pendingMood) {
+            navigate(`/outfit?mood=${pendingMood}`)
+            setPendingMood(null)
+        }
     }
 
     return (
@@ -77,7 +95,7 @@ export default function Home() {
                         fontWeight: 500,
                         color: 'hsl(var(--green-600))'
                     }}>
-                        <Sparkles size={14} />
+                        <Sparkle size={14} />
                         AI-Powered Fashion
                     </div>
 
@@ -178,7 +196,7 @@ export default function Home() {
                         className="btn btn-primary"
                         style={{ flex: 1, justifyContent: 'center' }}
                     >
-                        <Shirt size={16} />
+                        <TShirt size={16} />
                         My Closet
                     </Link>
                     <Link
@@ -396,6 +414,17 @@ export default function Home() {
                         isOpen={!!selectedOutfit}
                         onClose={() => setSelectedOutfit(null)}
                         outfit={selectedOutfit}
+                    />
+                )}
+            </AnimatePresence>
+
+            {/* Login Modal */}
+            <AnimatePresence>
+                {showLogin && (
+                    <OnboardingFlow
+                        isOpen={showLogin}
+                        onClose={() => { setShowLogin(false); setPendingMood(null) }}
+                        onComplete={handleLoginComplete}
                     />
                 )}
             </AnimatePresence>

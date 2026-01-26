@@ -40,6 +40,14 @@ export default function Profile() {
         gender: ''
     })
 
+    // Load preferences and other data once on mount
+    useEffect(() => {
+        loadPreferences()
+        loadRequests()
+        loadSavedOutfits()
+    }, [])
+
+    // Update profile state when userProfile changes (but don't reload preferences)
     useEffect(() => {
         if (userProfile) {
             setProfile({
@@ -47,9 +55,6 @@ export default function Profile() {
                 username: userProfile.username || ''
             })
         }
-        loadPreferences()
-        loadRequests()
-        loadSavedOutfits()
     }, [userProfile])
 
     const loadSavedOutfits = async () => {
