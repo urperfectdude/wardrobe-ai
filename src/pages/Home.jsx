@@ -312,9 +312,8 @@ export default function Home() {
             {/* Public Outfits Feed */}
             {publicOutfits.length > 0 && (
                 <section style={{ padding: '1.5rem 0' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <div style={{ marginBottom: '1rem' }}>
                         <h2 style={{ fontSize: '1.125rem', fontWeight: 700, margin: 0 }}>Recent Public Outfits</h2>
-                        <Link to="/outfit" style={{ fontSize: '0.75rem', color: 'hsl(var(--accent))', fontWeight: 600, textDecoration: 'none' }}>View All</Link>
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -324,13 +323,17 @@ export default function Home() {
                                 initial={{ opacity: 0, y: 20 }}
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
+                                onClick={() => setSelectedOutfit(outfit)}
                                 style={{
                                     background: 'hsl(var(--card))',
                                     border: '1px solid hsl(var(--border))',
                                     borderRadius: 'var(--radius-xl)',
                                     padding: '1rem',
-                                    boxShadow: 'var(--shadow-sm)'
+                                    boxShadow: 'var(--shadow-sm)',
+                                    cursor: 'pointer',
+                                    transition: 'transform 0.2s ease, box-shadow 0.2s ease'
                                 }}
+                                whileHover={{ scale: 1.01, boxShadow: 'var(--shadow-md)' }}
                             >
                                 {/* Header */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -406,22 +409,13 @@ export default function Home() {
                                         justifyContent: 'flex-end',
                                         paddingLeft: '2rem'
                                     }}>
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <button
-                                                className="btn btn-outline btn-sm"
-                                                style={{ whiteSpace: 'nowrap' }}
-                                                onClick={() => handleMoodSelect(outfit.mood)}
-                                            >
-                                                Try Similar
-                                            </button>
-                                            <button
-                                                className="btn btn-primary btn-sm"
-                                                style={{ whiteSpace: 'nowrap' }}
-                                                onClick={() => setSelectedOutfit(outfit)}
-                                            >
-                                                View Details
-                                            </button>
-                                        </div>
+                                        <button
+                                            className="btn btn-primary btn-sm"
+                                            style={{ whiteSpace: 'nowrap' }}
+                                            onClick={(e) => { e.stopPropagation(); handleMoodSelect(outfit.mood); }}
+                                        >
+                                            Try Similar
+                                        </button>
                                     </div>
                                 </div>
                             </motion.div>

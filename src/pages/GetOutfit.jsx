@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { MagicWand, Shuffle, ShoppingBag, Sparkle, ArrowRight, X, Heart, Check, ArrowSquareOut, SpinnerGap, TShirt, Gear, PencilSimple, CaretDown, CaretUp, ClockCounterClockwise, BookmarkSimple } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getWardrobeItems, getProducts, savePreferences, getPreferences, saveOutfit, markOutfitAsSaved, getRecentOutfits, getSavedOutfits } from '../utils/storage'
+import { getWardrobeItems, getProducts, savePreferences, getPreferences, saveOutfit, markOutfitAsSaved, getRecentOutfits, getSavedOutfits, saveRecentOutfit, saveRecentToSaved } from '../utils/storage'
 import { generateOutfit, OCCASION_CATEGORIES } from '../utils/outfitMatcher'
 import { EXISTING_CATEGORY4, EXISTING_COLORS, generateOutfitDescription } from '../utils/openaiAnalysis'
 import { useAuth } from '../contexts/AuthContext'
@@ -125,6 +125,9 @@ export default function GetOutfit() {
 
     // Source toggle: 'closet' or 'shop' or 'both'
     const [source, setSource] = useState('both')
+
+    // Tab for Saved/Recent toggle
+    const [activeTab, setActiveTab] = useState('saved')
 
     // User preferences state
     const [preferences, setPreferences] = useState({
@@ -249,7 +252,7 @@ export default function GetOutfit() {
                 }
                 setOutfit(newOutfit)
 
-                // 2. Get AI Description (Try first, but don't block saving)
+                // Get AI Description (Try first, but don't block)
                 let desc = ''
                 try {
                     desc = await generateOutfitDescription(mood, outfitItems)
@@ -259,15 +262,16 @@ export default function GetOutfit() {
                     console.error("Error generating description:", err)
                 }
 
-                // 3. Auto-save to 'Recent' history (Always)
+                // Auto-save to recent_outfits (source of truth for generation history)
                 try {
-                    const saved = await saveOutfit({ ...newOutfit, description: desc }, false, false)
+                    const outfitToSave = { ...newOutfit, description: desc }
+                    const saved = await saveRecentOutfit(outfitToSave, preferences)
                     if (saved) {
                         setActiveOutfitId(saved.id)
                         await refreshLists()
                     }
                 } catch (err) {
-                    console.error("Error auto-saving outfit:", err)
+                    console.error("Error auto-saving to recent_outfits:", err)
                 }
             } else {
                 setOutfit(null)
@@ -276,7 +280,8 @@ export default function GetOutfit() {
 
             setIsGenerating(false)
         }, 800)
-    }, [wardrobeItems, shopProducts, source])
+    }, [wardrobeItems, shopProducts, source, preferences])
+
 
     const [showOnboarding, setShowOnboarding] = useState(false)
 
@@ -310,21 +315,24 @@ export default function GetOutfit() {
     }
 
     const handleSaveOutfit = async () => {
-        if (!activeOutfitId) return
+        if (!activeOutfitId) return // Need recent outfit ID to save
         setIsSavingOutfit(true)
         try {
-            await markOutfitAsSaved(activeOutfitId, isPublic)
+            // Save from recent_outfits to saved_outfits
+            await saveRecentToSaved(activeOutfitId, isPublic)
             await refreshLists()
             // Reset page after save
             setOutfit(null)
             setActiveOutfitId(null)
             setOutfitDescription('')
+            setIsPublic(false) // Reset public toggle
         } catch (error) {
             console.error('Failed to save outfit:', error)
         } finally {
             setIsSavingOutfit(false)
         }
     }
+
 
     const togglePreference = (type, value) => {
         setPreferences(prev => {
@@ -564,21 +572,16 @@ export default function GetOutfit() {
                                         <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>Make Public</span>
                                     </div>
 
-                                    {activeOutfitId && savedOutfits.find(o => o.id === activeOutfitId) ? (
-                                        <span style={{ fontSize: '0.75rem', color: 'hsl(var(--accent))', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                            <Check size={14} /> Saved
-                                        </span>
-                                    ) : (
-                                        <button
-                                            className="btn btn-primary btn-sm"
-                                            onClick={handleSaveOutfit}
-                                            disabled={isSavingOutfit || !activeOutfitId}
-                                            style={{ fontSize: '0.75rem' }}
-                                        >
-                                            {isSavingOutfit ? <SpinnerGap size={13} className="animate-spin" /> : <BookmarkSimple size={13} />}
-                                            Save Outfit
-                                        </button>
-                                    )}
+                                    {/* Save button - requires activeOutfitId from recent_outfits */}
+                                    <button
+                                        className="btn btn-primary btn-sm"
+                                        onClick={handleSaveOutfit}
+                                        disabled={isSavingOutfit || !activeOutfitId}
+                                        style={{ fontSize: '0.75rem' }}
+                                    >
+                                        {isSavingOutfit ? <SpinnerGap size={13} className="animate-spin" /> : <BookmarkSimple size={13} />}
+                                        Save Outfit
+                                    </button>
                                 </div>
                             </div>
                             <div style={{
@@ -803,7 +806,7 @@ export default function GetOutfit() {
                 )}
             </AnimatePresence>
 
-            {/* Empty State / Previous History */}
+            {/* Empty State */}
             {hasItems && !outfit && !isGenerating && (
                 <div style={{ paddingBottom: '2rem' }}>
                     {!moodFromUrl && !recentOutfits?.length && !savedOutfits?.length && (
@@ -817,27 +820,81 @@ export default function GetOutfit() {
                             <p className="text-sm">AI will style you from {source === 'closet' ? 'your closet' : source === 'shop' ? 'shop items' : 'closet + shop'}</p>
                         </motion.div>
                     )}
-
-                    {/* Lists */}
-                    <>
-                        <OutfitList
-                            title="Saved Collections"
-                            icon={Heart}
-                            outfits={savedOutfits}
-                            emptyMsg="No favorites yet. Generate looks and save the ones you love!"
-                            onOutfitClick={handleOutfitClick}
-                        />
-
-                        <OutfitList
-                            title="Recent Generations"
-                            icon={ClockCounterClockwise}
-                            outfits={recentOutfits}
-                            emptyMsg="Your styling history will appear here."
-                            onOutfitClick={handleOutfitClick}
-                        />
-                    </>
                 </div>
             )}
+
+            {/* Saved Collections and Recent Generations - Tabbed Interface */}
+            <div style={{ paddingBottom: '2rem' }}>
+                {/* Tab Headers */}
+                <div style={{
+                    display: 'flex',
+                    gap: '0.5rem',
+                    marginBottom: '1rem',
+                    borderBottom: '1px solid hsl(var(--border))',
+                    paddingBottom: '0.5rem'
+                }}>
+                    <button
+                        onClick={() => setActiveTab('saved')}
+                        style={{
+                            padding: '0.5rem 1rem',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            background: activeTab === 'saved' ? 'hsl(var(--primary))' : 'transparent',
+                            color: activeTab === 'saved' ? 'white' : 'hsl(var(--foreground))',
+                            border: 'none',
+                            borderRadius: '0.5rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.375rem',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        <Heart size={16} weight={activeTab === 'saved' ? 'fill' : 'regular'} />
+                        Saved ({savedOutfits.length})
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('recent')}
+                        style={{
+                            padding: '0.5rem 1rem',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            background: activeTab === 'recent' ? 'hsl(var(--primary))' : 'transparent',
+                            color: activeTab === 'recent' ? 'white' : 'hsl(var(--foreground))',
+                            border: 'none',
+                            borderRadius: '0.5rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.375rem',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        <ClockCounterClockwise size={16} />
+                        Recent ({recentOutfits.length})
+                    </button>
+                </div>
+
+                {/* Tab Content */}
+                {activeTab === 'saved' && (
+                    <OutfitList
+                        title=""
+                        icon={Heart}
+                        outfits={savedOutfits}
+                        emptyMsg="No favorites yet. Generate looks and save the ones you love!"
+                        onOutfitClick={handleOutfitClick}
+                    />
+                )}
+                {activeTab === 'recent' && (
+                    <OutfitList
+                        title=""
+                        icon={ClockCounterClockwise}
+                        outfits={recentOutfits}
+                        emptyMsg="Your styling history will appear here."
+                        onOutfitClick={handleOutfitClick}
+                    />
+                )}
+            </div>
 
             {/* Preferences Modal */}
             <AnimatePresence>

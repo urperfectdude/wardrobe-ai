@@ -12,7 +12,7 @@ import { supabase } from '../lib/supabase'
 // ============================================
 
 // Get session with timeout to prevent hanging
-async function getAuthSession(timeoutMs = 2000) {
+async function getAuthSession(timeoutMs = 5000) {
     // First try localStorage for immediate session (faster, non-blocking)
     try {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -86,6 +86,11 @@ async function supabaseFetch(table, options = {}) {
         url += `?select=*`
     }
 
+    // Merge custom headers (for Prefer: resolution=merge-duplicates etc)
+    if (options.headers) {
+        Object.assign(headers, options.headers)
+    }
+
     const fetchOptions = { headers }
     if (options.method) fetchOptions.method = options.method
     if (options.body) fetchOptions.body = JSON.stringify(options.body)
@@ -95,7 +100,12 @@ async function supabaseFetch(table, options = {}) {
         const errText = await response.text()
         throw new Error(`Fetch failed (${response.status}): ${errText}`)
     }
-    return await response.json() // Returns array by default for select, or object for single
+    // Handle 204 No Content (successful upsert with no body)
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+        return null
+    }
+    const text = await response.text()
+    return text ? JSON.parse(text) : null
 }
 
 // ============================================
@@ -457,6 +467,32 @@ export function compressImage(base64, maxWidth = 400) {
 // SAVED OUTFITS
 // ============================================
 
+// Auto-save every generation to recent_outfits (source of truth)
+export async function saveRecentOutfit(outfit, preferences = null) {
+    try {
+        const session = await getAuthSession()
+        const user = session?.user
+        if (!user) return null
+
+        const data = await supabaseFetch('recent_outfits', {
+            method: 'POST',
+            body: {
+                user_id: user.id,
+                mood: outfit.mood,
+                items: outfit.items,
+                description: outfit.description || '',
+                preferences: preferences,
+                reason: outfit.reason || '',
+                is_public: false
+            }
+        })
+        return Array.isArray(data) ? data[0] : data
+    } catch (error) {
+        console.error('Error saving recent outfit:', error)
+        throw new Error('Failed to save recent outfit')
+    }
+}
+
 export async function saveOutfit(outfit, isSaved = false, isPublic = false) {
     try {
         const session = await getAuthSession()
@@ -495,13 +531,46 @@ export async function markOutfitAsSaved(outfitId, isPublic = false) {
     }
 }
 
+// Mark a recent outfit as saved (add FK reference to saved_outfits)
+export async function saveRecentToSaved(recentOutfitId, isPublic = false) {
+    try {
+        const session = await getAuthSession()
+        const user = session?.user
+        if (!user) return null
+
+        // Insert FK reference into saved_outfits
+        const data = await supabaseFetch('saved_outfits', {
+            method: 'POST',
+            body: {
+                user_id: user.id,
+                recent_outfit_id: recentOutfitId
+            }
+        })
+
+        // Update recent_outfits to mark as public if needed
+        if (isPublic) {
+            await supabaseFetch('recent_outfits', {
+                method: 'PATCH',
+                query: `id=eq.${recentOutfitId}`,
+                body: { is_public: true, updated_at: new Date().toISOString() }
+            })
+        }
+
+        return Array.isArray(data) ? data[0] : data
+    } catch (error) {
+        console.error('Error saving recent to saved:', error)
+        throw new Error('Failed to save outfit')
+    }
+}
+
+// Get recent outfits from recent_outfits table (generation history)
 export async function getRecentOutfits() {
     try {
         const session = await getAuthSession()
         const user = session?.user
         if (!user) return []
 
-        const data = await supabaseFetch('saved_outfits', {
+        const data = await supabaseFetch('recent_outfits', {
             query: `user_id=eq.${user.id}&order=created_at.desc&limit=20`
         })
         return data || []
@@ -510,17 +579,29 @@ export async function getRecentOutfits() {
     }
 }
 
+// Get saved outfits by fetching FKs from saved_outfits and joining with recent_outfits
 export async function getSavedOutfits() {
     try {
         const session = await getAuthSession()
         const user = session?.user
         if (!user) return []
 
-        const data = await supabaseFetch('saved_outfits', {
-            query: `user_id=eq.${user.id}&is_saved=eq.true&order=created_at.desc`
+        // Get saved outfit FKs
+        const savedRefs = await supabaseFetch('saved_outfits', {
+            query: `user_id=eq.${user.id}&order=created_at.desc`
         })
-        return data || []
+
+        if (!savedRefs || savedRefs.length === 0) return []
+
+        // Get the actual outfit data from recent_outfits
+        const recentOutfitIds = savedRefs.map(s => s.recent_outfit_id)
+        const outfits = await supabaseFetch('recent_outfits', {
+            query: `id=in.(${recentOutfitIds.join(',')})&order=created_at.desc`
+        })
+
+        return outfits || []
     } catch (error) {
+        console.error('Error getting saved outfits:', error)
         return []
     }
 }
@@ -531,11 +612,9 @@ export async function getOutfitHistory() {
 
 export async function getPublicOutfits(limit = 10, offset = 0) {
     try {
-        // This requires a join with user_profiles. REST API can do this with select=*,user_profiles(...) syntax
-        // user_profiles must be a relationship
-
-        const data = await supabaseFetch('saved_outfits', {
-            query: `select=*,user_profiles(username,avatar_url,name)&is_public=eq.true&is_saved=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
+        // Query recent_outfits where is_public=true (source of truth for public outfits)
+        const data = await supabaseFetch('recent_outfits', {
+            query: `is_public=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
             skipAuth: true
         })
         return data || []

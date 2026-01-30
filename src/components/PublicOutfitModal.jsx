@@ -70,6 +70,37 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                         </button>
                     </div>
 
+                    {/* AI Reason */}
+                    {(outfit.description || outfit.reason) && (
+                        <div style={{
+                            marginBottom: '1rem',
+                            padding: '1rem',
+                            background: 'hsl(var(--secondary))',
+                            borderRadius: 'var(--radius-lg)',
+                            border: '1px solid hsl(var(--border))'
+                        }}>
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                marginBottom: '0.5rem',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                color: 'hsl(var(--accent))'
+                            }}>
+                                ✨ Why this outfit?
+                            </div>
+                            <p style={{
+                                fontSize: '0.8125rem',
+                                color: 'hsl(var(--foreground))',
+                                margin: 0,
+                                lineHeight: 1.5
+                            }}>
+                                {outfit.description || outfit.reason}
+                            </p>
+                        </div>
+                    )}
+
                     {/* Likes/Vibe */}
                     <div style={{
                         display: 'flex',

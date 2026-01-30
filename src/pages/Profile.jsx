@@ -262,7 +262,14 @@ export default function Profile() {
                     {/* Pencil Edit Icon */}
                     {!editMode && (
                         <button
-                            onClick={() => setEditMode(true)}
+                            onClick={() => {
+                                // Autofill with existing data when entering edit mode
+                                setProfile({
+                                    name: userProfile?.name || user?.user_metadata?.full_name || '',
+                                    username: userProfile?.username || ''
+                                })
+                                setEditMode(true)
+                            }}
                             style={{
                                 width: '40px',
                                 height: '40px',
