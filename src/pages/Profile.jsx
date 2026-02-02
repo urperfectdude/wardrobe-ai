@@ -4,9 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { getPreferences, savePreferences, getPurchaseRequests, updatePurchaseRequest, getSavedOutfits } from '../utils/storage'
+import { getPreferences, savePreferences, getPurchaseRequests, updatePurchaseRequest, getSavedOutfits, getRecentOutfits } from '../utils/storage'
 import { EXISTING_CATEGORY4, EXISTING_COLORS } from '../utils/openaiAnalysis'
 import OnboardingFlow from '../components/OnboardingFlow'
+import PublicOutfitModal from '../components/PublicOutfitModal'
 import DualRangeSlider from '../components/DualRangeSlider'
 
 const BODY_TYPES = ['Slim', 'Athletic', 'Regular', 'Curvy', 'Plus Size']
@@ -19,9 +20,11 @@ export default function Profile() {
     const [saving, setSaving] = useState(false)
     const [requests, setRequests] = useState([])
     const [savedOutfits, setSavedOutfits] = useState([])
+    const [recentOutfits, setRecentOutfits] = useState([])
     const [loadingRequests, setLoadingRequests] = useState(true)
     const [activeTab, setActiveTab] = useState('outfits') // 'outfits' or 'selling' or 'buying'
     const [isPrefsOpen, setIsPrefsOpen] = useState(false)
+    const [selectedOutfit, setSelectedOutfit] = useState(null)
 
     const [profile, setProfile] = useState({
         name: '',
@@ -45,6 +48,7 @@ export default function Profile() {
         loadPreferences()
         loadRequests()
         loadSavedOutfits()
+        loadRecentOutfits()
     }, [])
 
     // Update profile state when userProfile changes (but don't reload preferences)
@@ -63,6 +67,15 @@ export default function Profile() {
             setSavedOutfits(data)
         } catch (error) {
             console.error('Error loading saved outfits:', error)
+        }
+    }
+
+    const loadRecentOutfits = async () => {
+        try {
+            const data = await getRecentOutfits()
+            setRecentOutfits(data)
+        } catch (error) {
+            console.error('Error loading recent outfits:', error)
         }
     }
 
@@ -532,31 +545,22 @@ export default function Profile() {
             </motion.div>
 
 
-            {/* Content Tabs */}
+            {/* Content Tabs - Saved and Recent Outfits */}
             <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
                 <button
                     className={`chip ${activeTab === 'outfits' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('outfits')}
                     style={{ fontSize: '0.75rem' }}
+                    onClick={() => setActiveTab('outfits')}
                 >
-                    <Heart size={14} className={activeTab === 'outfits' ? 'fill-current' : ''} />
+                    <Heart size={14} className="fill-current" />
                     Saved Outfits ({savedOutfits.length})
                 </button>
                 <button
-                    className={`chip ${activeTab === 'selling' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('selling')}
+                    className={`chip ${activeTab === 'recent' ? 'active' : ''}`}
                     style={{ fontSize: '0.75rem' }}
+                    onClick={() => setActiveTab('recent')}
                 >
-                    <ShoppingBag size={14} />
-                    Selling ({requests.filter(r => r.seller_id === user.id).length})
-                </button>
-                <button
-                    className={`chip ${activeTab === 'buying' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('buying')}
-                    style={{ fontSize: '0.75rem' }}
-                >
-                    <ShoppingBag size={14} />
-                    Buying ({requests.filter(r => r.buyer_id === user.id).length})
+                    Recent ({recentOutfits.length})
                 </button>
             </div>
 
@@ -565,7 +569,12 @@ export default function Profile() {
                 <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr)', // Force single column 
+                        gap: '1rem',
+                        marginBottom: '1.5rem'
+                    }}
                 >
                     {savedOutfits.length === 0 ? (
                         <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem 1rem', background: 'hsl(var(--muted))', borderRadius: 'var(--radius-lg)' }}>
@@ -573,21 +582,143 @@ export default function Profile() {
                         </div>
                     ) : (
                         savedOutfits.map(outfit => (
-                            <div key={outfit.id} className="card" style={{ padding: '0.75rem' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.25rem', marginBottom: '0.75rem' }}>
-                                    {outfit.items.slice(0, 4).map((item, i) => (
-                                        <div key={i} style={{ aspectRatio: '1', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'hsl(var(--muted))' }}>
-                                            <img src={item.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        </div>
-                                    ))}
+                            <div
+                                key={outfit.id}
+                                className="card"
+                                style={{ padding: '0.75rem', overflow: 'hidden', cursor: 'pointer' }}
+                                onClick={() => setSelectedOutfit(outfit)}
+                            >
+                                {/* Horizontal Items Strip with Fade & CTA - No Header */}
+                                <div style={{ position: 'relative', height: '120px' }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '0.5rem',
+                                        overflowX: 'auto',
+                                        height: '100%',
+                                        scrollbarWidth: 'none', // Hide scrollbar
+                                        paddingRight: '140px' // Increased space for fade/button
+                                    }}>
+                                        {outfit.items.map((item, i) => (
+                                            <div key={i} style={{
+                                                position: 'relative',
+                                                height: '100%',
+                                                aspectRatio: '1/1',
+                                                borderRadius: 'var(--radius-lg)',
+                                                overflow: 'hidden',
+                                                border: '1px solid hsl(var(--border))',
+                                                flexShrink: 0
+                                            }}>
+                                                <img
+                                                    src={item.image}
+                                                    alt=""
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Fade Overlay & CTA */}
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        right: 0,
+                                        bottom: 0,
+                                        width: '240px', // Wider fade
+                                        background: 'linear-gradient(to right, transparent, hsl(var(--card)) 40%)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        paddingLeft: '2rem'
+                                    }}>
+                                        <button
+                                            className="btn btn-primary btn-sm"
+                                            style={{ whiteSpace: 'nowrap' }}
+                                            onClick={() => navigate('/outfit', { state: { mood: outfit.mood } })}
+                                        >
+                                            Try '{outfit.mood}' Outfit
+                                        </button>
+                                    </div>
                                 </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '0.6875rem', fontWeight: 600, textTransform: 'uppercase', color: 'hsl(var(--muted-foreground))' }}>
-                                        {outfit.mood}
-                                    </span>
-                                    <span style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))' }}>
-                                        {new Date(outfit.created_at).toLocaleDateString()}
-                                    </span>
+                            </div>
+                        ))
+                    )}
+                </motion.div>
+            )}
+
+            {/* Recent Outfits Grid */}
+            {activeTab === 'recent' && (
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr)', // Force single column
+                        gap: '1rem',
+                        marginBottom: '1.5rem'
+                    }}
+                >
+                    {recentOutfits.length === 0 ? (
+                        <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem 1rem', background: 'hsl(var(--muted))', borderRadius: 'var(--radius-lg)' }}>
+                            <p className="text-muted text-sm">No recent outfits yet</p>
+                        </div>
+                    ) : (
+                        recentOutfits.map(outfit => (
+                            <div
+                                key={outfit.id}
+                                className="card"
+                                style={{ padding: '0.75rem', overflow: 'hidden', cursor: 'pointer' }}
+                                onClick={() => setSelectedOutfit(outfit)}
+                            >
+                                {/* Horizontal Items Strip with Fade & CTA - No Header */}
+                                <div style={{ position: 'relative', height: '120px' }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '0.5rem',
+                                        overflowX: 'auto',
+                                        height: '100%',
+                                        scrollbarWidth: 'none', // Hide scrollbar
+                                        paddingRight: '140px' // Increased space for fade/button
+                                    }}>
+                                        {outfit.items.map((item, i) => (
+                                            <div key={i} style={{
+                                                position: 'relative',
+                                                height: '100%',
+                                                aspectRatio: '1/1',
+                                                borderRadius: 'var(--radius-lg)',
+                                                overflow: 'hidden',
+                                                border: '1px solid hsl(var(--border))',
+                                                flexShrink: 0
+                                            }}>
+                                                <img
+                                                    src={item.image}
+                                                    alt=""
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Fade Overlay & CTA */}
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        right: 0,
+                                        bottom: 0,
+                                        width: '240px', // Wider fade
+                                        background: 'linear-gradient(to right, transparent, hsl(var(--card)) 40%)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        paddingLeft: '2rem'
+                                    }}>
+                                        <button
+                                            className="btn btn-primary btn-sm"
+                                            style={{ whiteSpace: 'nowrap' }}
+                                            onClick={() => navigate('/outfit', { state: { mood: outfit.mood } })}
+                                        >
+                                            Try '{outfit.mood}' Outfit
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))
@@ -709,6 +840,17 @@ export default function Profile() {
                 <SignOut size={16} />
                 Sign Out
             </motion.button>
+
+            {/* Public Outfit Detail Modal */}
+            <AnimatePresence>
+                {selectedOutfit && (
+                    <PublicOutfitModal
+                        isOpen={!!selectedOutfit}
+                        onClose={() => setSelectedOutfit(null)}
+                        outfit={selectedOutfit}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     )
 }

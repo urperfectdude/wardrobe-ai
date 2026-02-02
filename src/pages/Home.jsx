@@ -15,6 +15,7 @@ export default function Home() {
     const [selectedOutfit, setSelectedOutfit] = useState(null)
     const [showLogin, setShowLogin] = useState(false)
     const [pendingMood, setPendingMood] = useState(null)
+    const [searchQuery, setSearchQuery] = useState('')
     const [offset, setOffset] = useState(0)
     const [hasMore, setHasMore] = useState(true)
     const LIMIT = 8
@@ -94,136 +95,169 @@ export default function Home() {
     return (
         <div className="container">
             {/* Hero Section */}
-            <section style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+            <section style={{ textAlign: 'center', padding: '2rem 0 1.5rem' }}>
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4 }}
+                    transition={{ duration: 0.5 }}
                 >
                     <div style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '0.375rem',
                         padding: '0.375rem 0.75rem',
-                        background: 'hsl(var(--green-100))',
+                        background: 'linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--accent) / 0.15))',
                         borderRadius: 'var(--radius-full)',
-                        marginBottom: '0.75rem',
+                        marginBottom: '1rem',
                         fontSize: '0.75rem',
-                        fontWeight: 500,
-                        color: 'hsl(var(--green-600))'
+                        fontWeight: 600,
+                        color: 'hsl(var(--primary))'
                     }}>
-                        <Sparkle size={14} />
-                        AI-Powered Fashion
+                        <Sparkle size={14} weight="fill" />
+                        Your AI Stylist
                     </div>
 
                     <h1 style={{
-                        fontSize: 'clamp(1.5rem, 5vw, 2.25rem)',
+                        fontSize: 'clamp(1.25rem, 4.5vw, 1.75rem)',
                         marginBottom: '0.5rem',
-                        lineHeight: 1.2
+                        lineHeight: 1.2,
+                        fontWeight: 800,
+                        background: 'linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--primary)))',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
+                        whiteSpace: 'nowrap'
                     }}>
-                        What's Your Mood Today?
+                        Never wonder what to wear again
                     </h1>
 
                     <p style={{
                         fontSize: '0.875rem',
                         color: 'hsl(var(--muted-foreground))',
-                        maxWidth: '350px',
-                        margin: '0 auto 1rem',
-                        lineHeight: 1.5
+                        maxWidth: '300px',
+                        margin: '0 auto 1.5rem',
+                        lineHeight: 1.4
                     }}>
-                        Tap an occasion and get AI-styled outfits from your closet + shop recommendations
+                        AI creates outfit from your wardrobe & finds missing pieces instantly
                     </p>
                 </motion.div>
             </section>
 
-            {/* Mood/Occasion Quick Selector - Main Feature */}
-            <section style={{ padding: '0.5rem 0 1.5rem' }}>
+            {/* ChatGPT-Style Input Section */}
+            <section style={{ padding: '0 0 1.5rem' }}>
                 <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.4, delay: 0.1 }}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.15 }}
                 >
+                    {/* Input Box */}
                     <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(3, 1fr)',
-                        gap: '0.5rem'
+                        position: 'relative',
+                        marginBottom: '1rem'
                     }}>
-                        {moods.map((mood, idx) => (
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && searchQuery.trim()) {
+                                    handleMoodSelect(searchQuery.trim())
+                                }
+                            }}
+                            placeholder="What's the vibe today?"
+                            style={{
+                                width: '100%',
+                                padding: '1rem 3.5rem 1rem 1rem',
+                                fontSize: '1rem',
+                                border: '2px solid hsl(var(--border))',
+                                borderRadius: 'var(--radius-xl)',
+                                background: 'hsl(var(--card))',
+                                color: 'hsl(var(--foreground))',
+                                outline: 'none',
+                                transition: 'border-color 0.2s, box-shadow 0.2s'
+                            }}
+                            onFocus={(e) => {
+                                e.target.style.borderColor = 'hsl(var(--primary))'
+                                e.target.style.boxShadow = '0 0 0 4px hsl(var(--primary) / 0.1)'
+                            }}
+                            onBlur={(e) => {
+                                e.target.style.borderColor = 'hsl(var(--border))'
+                                e.target.style.boxShadow = 'none'
+                            }}
+                        />
+                        <button
+                            onClick={() => searchQuery.trim() && handleMoodSelect(searchQuery.trim())}
+                            disabled={!searchQuery.trim()}
+                            style={{
+                                position: 'absolute',
+                                right: '0.5rem',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                width: '2.5rem',
+                                height: '2.5rem',
+                                borderRadius: 'var(--radius-lg)',
+                                border: 'none',
+                                background: searchQuery.trim() ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
+                                color: searchQuery.trim() ? 'white' : 'hsl(var(--muted-foreground))',
+                                cursor: searchQuery.trim() ? 'pointer' : 'not-allowed',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'background 0.2s'
+                            }}
+                        >
+                            <MagicWand size={18} weight="fill" />
+                        </button>
+                    </div>
+
+                    {/* Mood/Occasion Chips */}
+                    <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.5rem',
+                        justifyContent: 'center'
+                    }}>
+                        {[
+                            'Casual', 'Work', 'Date Night', 'Party', 'Vacation',
+                            'Wedding', 'Brunch', 'Gym', 'Cozy Night In', 'Interview'
+                        ].map((chip, idx) => (
                             <motion.button
-                                key={mood.id}
-                                initial={{ opacity: 0, scale: 0.95 }}
+                                key={chip}
+                                initial={{ opacity: 0, scale: 0.9 }}
                                 animate={{ opacity: 1, scale: 1 }}
-                                transition={{ duration: 0.2, delay: 0.15 + idx * 0.04 }}
-                                whileTap={{ scale: 0.97 }}
-                                onClick={() => handleMoodSelect(mood.id)}
+                                transition={{ duration: 0.2, delay: 0.2 + idx * 0.03 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => {
+                                    setSearchQuery(chip)
+                                    handleMoodSelect(chip)
+                                }}
                                 style={{
-                                    position: 'relative',
-                                    aspectRatio: '1/1',
-                                    overflow: 'hidden',
-                                    border: 'none',
-                                    borderRadius: 'var(--radius-lg)',
+                                    padding: '0.5rem 0.875rem',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 500,
+                                    background: 'hsl(var(--muted))',
+                                    border: '1px solid hsl(var(--border))',
+                                    borderRadius: 'var(--radius-full)',
+                                    color: 'hsl(var(--foreground))',
                                     cursor: 'pointer',
-                                    padding: 0
+                                    transition: 'all 0.2s',
+                                    whiteSpace: 'nowrap'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.target.style.background = 'hsl(var(--primary) / 0.1)'
+                                    e.target.style.borderColor = 'hsl(var(--primary) / 0.3)'
+                                    e.target.style.color = 'hsl(var(--primary))'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.background = 'hsl(var(--muted))'
+                                    e.target.style.borderColor = 'hsl(var(--border))'
+                                    e.target.style.color = 'hsl(var(--foreground))'
                                 }}
                             >
-                                <img
-                                    src={mood.image}
-                                    alt={mood.label}
-                                    style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        objectFit: 'cover'
-                                    }}
-                                />
-                                {/* Black gradient overlay */}
-                                <div style={{
-                                    position: 'absolute',
-                                    inset: 0,
-                                    background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.1) 50%, transparent 100%)'
-                                }} />
-                                {/* Label */}
-                                <span style={{
-                                    position: 'absolute',
-                                    bottom: '0.625rem',
-                                    left: '0.5rem',
-                                    right: '0.5rem',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    color: 'white',
-                                    textAlign: 'center'
-                                }}>
-                                    {mood.label}
-                                </span>
+                                {chip}
                             </motion.button>
                         ))}
                     </div>
-                </motion.div>
-            </section>
-
-            {/* Quick Actions */}
-            <section style={{ padding: '0.5rem 0 1rem' }}>
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.4, delay: 0.25 }}
-                    style={{ display: 'flex', gap: '0.5rem' }}
-                >
-                    <Link
-                        to="/closet"
-                        className="btn btn-primary"
-                        style={{ flex: 1, justifyContent: 'center' }}
-                    >
-                        <TShirt size={16} />
-                        My Closet
-                    </Link>
-                    <Link
-                        to="/shop"
-                        className="btn btn-outline"
-                        style={{ flex: 1, justifyContent: 'center' }}
-                    >
-                        <ShoppingBag size={16} />
-                        Shop
-                    </Link>
                 </motion.div>
             </section>
 
@@ -279,35 +313,6 @@ export default function Home() {
                 </motion.div>
             </section>
 
-            {/* Preferences CTA */}
-            <section style={{ padding: '1rem 0 2rem' }}>
-                <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.4 }}
-                    style={{
-                        background: 'linear-gradient(135deg, hsl(var(--green-100)), hsl(150 60% 95%))',
-                        borderRadius: 'var(--radius-xl)',
-                        padding: '1.25rem',
-                        textAlign: 'center',
-                        border: '1px solid hsl(var(--accent) / 0.3)'
-                    }}
-                >
-                    <Heart size={24} style={{ color: 'hsl(var(--accent))', marginBottom: '0.5rem' }} />
-                    <h2 style={{ fontSize: '1rem', marginBottom: '0.375rem' }}>Personalize Your Style</h2>
-                    <p style={{
-                        color: 'hsl(var(--muted-foreground))',
-                        fontSize: '0.8125rem',
-                        marginBottom: '0.75rem'
-                    }}>
-                        Tell us your preferences for better recommendations
-                    </p>
-                    <Link to="/outfit?preferences=true" className="btn btn-primary btn-sm">
-                        <Sparkle size={14} />
-                        Set Preferences
-                    </Link>
-                </motion.div>
-            </section>
 
             {/* Public Outfits Feed */}
             {publicOutfits.length > 0 && (
@@ -335,39 +340,7 @@ export default function Home() {
                                 }}
                                 whileHover={{ scale: 1.01, boxShadow: 'var(--shadow-md)' }}
                             >
-                                {/* Header */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                                    {outfit.user_profiles?.avatar_url ? (
-                                        <img
-                                            src={outfit.user_profiles.avatar_url}
-                                            alt=""
-                                            style={{ width: '40px', height: '40px', borderRadius: '50%' }}
-                                        />
-                                    ) : (
-                                        <div style={{
-                                            width: '40px', height: '40px', borderRadius: '50%',
-                                            background: 'hsl(var(--accent))', color: 'white',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: '1rem', fontWeight: 600
-                                        }}>
-                                            {(outfit.user_profiles?.name?.[0] || outfit.user_profiles?.username?.[0] || 'U').toUpperCase()}
-                                        </div>
-                                    )}
-                                    <div>
-                                        <p style={{ fontSize: '0.9375rem', margin: 0 }}>
-                                            <span style={{ fontWeight: 700 }}>
-                                                {outfit.user_profiles?.name || outfit.user_profiles?.username || 'Anonymous User'}
-                                            </span>
-                                            <span style={{ color: 'hsl(var(--muted-foreground))' }}> created </span>
-                                            <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>
-                                                {outfit.mood}
-                                            </span>
-                                            <span style={{ color: 'hsl(var(--muted-foreground))' }}> outfit</span>
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Horizontal Items Strip with Fade & CTA */}
+                                {/* Horizontal Items Strip with Fade & CTA - No Header */}
                                 <div style={{ position: 'relative', height: '120px' }}>
                                     <div style={{
                                         display: 'flex',
@@ -375,7 +348,7 @@ export default function Home() {
                                         overflowX: 'auto',
                                         height: '100%',
                                         scrollbarWidth: 'none', // Hide scrollbar
-                                        paddingRight: '120px' // Space for fade
+                                        paddingRight: '140px' // Increased space for fade/button
                                     }}>
                                         {outfit.items.map((item, i) => (
                                             <div key={i} style={{
@@ -402,7 +375,7 @@ export default function Home() {
                                         top: 0,
                                         right: 0,
                                         bottom: 0,
-                                        width: '200px',
+                                        width: '240px', // Wider fade
                                         background: 'linear-gradient(to right, transparent, hsl(var(--card)) 40%)',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -414,7 +387,7 @@ export default function Home() {
                                             style={{ whiteSpace: 'nowrap' }}
                                             onClick={(e) => { e.stopPropagation(); handleMoodSelect(outfit.mood); }}
                                         >
-                                            Try Similar
+                                            Try '{outfit.mood}' Outfit
                                         </button>
                                     </div>
                                 </div>

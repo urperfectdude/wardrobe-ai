@@ -97,7 +97,7 @@ export default function Shop() {
             {/* Header with Thrift Toggle */}
             <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                    <h1 style={{ marginBottom: '0.25rem' }}>Shop Fashion</h1>
+                    <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>Shop Fashion</h1>
                     <p className="text-muted text-sm">Find pieces from top Indian brands</p>
                 </div>
 

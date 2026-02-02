@@ -1,6 +1,7 @@
 // OpenAI Image Analysis for Clothing
 // Uses GPT-4o-mini with vision for clothing analysis
 
+import { createVisionCompletion, createChatCompletion, isOpenAIConfigured } from '../lib/openai'
 // Existing reference lists for matching - these are sent to AI for structured output
 export const EXISTING_COLORS = [
     "Black", "White", "Gray", "Navy", "Blue", "Red", "Pink", "Green",
@@ -40,11 +41,10 @@ export const EXISTING_CATEGORY4 = [
 
 // Main analysis function using Chat Completions API with vision
 export async function analyzeClothingImage(imageBase64) {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-
-    if (!apiKey) {
+    if (!isOpenAIConfigured()) {
         console.warn('OpenAI API key not configured')
-        return getFallbackAnalysis()
+        // Return a special error object or throw to let UI handle it
+        throw new Error('MISSING_API_KEY')
     }
 
     try {
@@ -82,10 +82,11 @@ ${EXISTING_CATEGORY4.join(', ')}
 - Multiple items visible (should be single item)
 
 ## YOUR RESPONSE FORMAT:
-Respond with ONLY these lines in this exact format (no extra text):
+Respond with ONLY these lines in this exact format (no extra text, no markdown, no bolding):
 
 title: [A short catchy title for this item, max 5 words]
 description: [A brief 1-sentence description of the item]
+ai_description: [A 2-3 sentence stylist description including: material/fabric guess, occasions this works for (e.g. casual, work, date night, parties), colors it pairs well with, and overall vibe. Write as a personal stylist giving advice.]
 brand: [Brand name from the list, or Unknown]
 color: [Primary color from the list]
 category1: [Target audience from list]
@@ -96,48 +97,20 @@ issue: [Any detected quality issue, or "None" if image is good]
 
 IMPORTANT: Only use values from the provided lists. Be accurate and helpful.`
 
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: 'gpt-4o-mini',
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    {
-                        role: 'user',
-                        content: [
-                            { type: 'text', text: 'Analyze this clothing/fashion item and extract the attributes.' },
-                            {
-                                type: 'image_url',
-                                image_url: {
-                                    url: imageBase64.startsWith('data:')
-                                        ? imageBase64
-                                        : `data:image/jpeg;base64,${imageBase64}`,
-                                    detail: 'high'
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens: 500,
-                temperature: 0.2
-            })
+        const content = await createVisionCompletion({
+            systemPrompt,
+            userPrompt: 'Analyze this clothing/fashion item and extract the attributes.',
+            imageBase64,
+            maxTokens: 500,
+            temperature: 0.2
         })
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}))
-            console.error('OpenAI API error:', response.status, errorData)
-            throw new Error(`API error: ${response.status}`)
-        }
-
-        const data = await response.json()
-        const content = data.choices[0]?.message?.content || ''
         console.log('AI Response:', content) // Debug log
 
-        return parseTextResponse(content)
+        // Clean content of markdown code blocks if present
+        const cleanContent = content.replace(/```\w*\n/g, '').replace(/```/g, '')
+
+        return parseTextResponse(cleanContent)
 
     } catch (error) {
         console.error('OpenAI analysis failed:', error)
@@ -151,6 +124,7 @@ function parseTextResponse(content) {
     const result = {
         title: '',
         description: '',
+        ai_description: '',
         brand: '',
         color: '',
         category1: '',
@@ -164,12 +138,14 @@ function parseTextResponse(content) {
         const colonIndex = line.indexOf(':')
         if (colonIndex === -1) continue
 
-        const key = line.substring(0, colonIndex).trim().toLowerCase()
+        // Robust key cleaning: removes *, _, - and trims whitespace
+        const key = line.substring(0, colonIndex).replace(/[*_\-]/g, '').trim().toLowerCase()
         const value = line.substring(colonIndex + 1).trim()
 
         switch (key) {
             case 'title': result.title = value; break
             case 'description': result.description = value; break
+            case 'aidescription': result.ai_description = value; break
             case 'brand': result.brand = value; break
             case 'color': result.color = validateOption(value, EXISTING_COLORS); break
             case 'category1': result.category1 = validateOption(value, EXISTING_CATEGORY1); break
@@ -207,6 +183,7 @@ function getFallbackAnalysis() {
     return {
         title: '',
         description: '',
+        ai_description: '',
         brand: '',
         color: '',
         category1: '',
@@ -219,38 +196,29 @@ function getFallbackAnalysis() {
 
 // Generate a short description/reasoning for an outfit
 export async function generateOutfitDescription(mood, items) {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-    if (!apiKey) return "This outfit was curated to match your selected mood with a balance of style and comfort."
+    if (!isOpenAIConfigured()) {
+        return "This outfit was curated to match your selected mood with a balance of style and comfort."
+    }
 
     try {
         const itemDescriptions = items.map(i => `${i.title || i.name} (${i.color}, ${i.category})`).join(', ')
 
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: 'gpt-4o-mini',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a personal stylist. Write a concise, engaging 1-2 sentence explanation of why this outfit works for the specific mood. Mention color coordination or style balance.'
-                    },
-                    {
-                        role: 'user',
-                        content: `Mood: ${mood}. Items: ${itemDescriptions}. Why is this a good outfit?`
-                    }
-                ],
-                max_tokens: 100,
-                temperature: 0.7
-            })
+        const content = await createChatCompletion({
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a personal stylist. Write a concise, engaging 1-2 sentence explanation of why this outfit works for the specific mood. Mention color coordination or style balance.'
+                },
+                {
+                    role: 'user',
+                    content: `Mood: ${mood}. Items: ${itemDescriptions}. Why is this a good outfit?`
+                }
+            ],
+            maxTokens: 100,
+            temperature: 0.7
         })
 
-        if (!response.ok) throw new Error('API error')
-        const data = await response.json()
-        return data.choices[0]?.message?.content || "A stylish combination perfect for the occasion."
+        return content || "A stylish combination perfect for the occasion."
     } catch (error) {
         console.error('Error generating description:', error)
         return "This outfit combines compatible colors and styles for a cohesive look."

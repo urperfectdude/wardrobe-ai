@@ -129,6 +129,7 @@ export async function getWardrobeItems() {
             image: item.image_url,
             title: item.title,
             description: item.description,
+            ai_description: item.ai_description,
             brand: item.brand,
             category: item.category,
             color: item.color,
@@ -242,25 +243,7 @@ export async function saveWardrobeItem(item) {
 
         let imageUrl = item.image
         if (item.image && item.image.startsWith('data:')) {
-            const fileName = `uploads/${Date.now()}.jpg`
-            const base64Data = item.image.split(',')[1]
-
-            const { error: uploadError } = await supabase.storage
-                .from('wardrobe-images')
-                .upload(fileName, decode(base64Data), {
-                    contentType: 'image/jpeg'
-                })
-
-            if (uploadError) {
-                console.error('Image upload error:', uploadError)
-                // Fallback to base64
-                imageUrl = item.image
-            } else {
-                const { data: { publicUrl } } = supabase.storage
-                    .from('wardrobe-images')
-                    .getPublicUrl(fileName)
-                imageUrl = publicUrl
-            }
+            imageUrl = await uploadImageToStorage(item.image)
         }
 
         const data = await supabaseFetch('wardrobe_items', {
@@ -270,6 +253,7 @@ export async function saveWardrobeItem(item) {
                 image_url: imageUrl,
                 title: item.title || '',
                 description: item.description || '',
+                ai_description: item.ai_description || '',
                 brand: item.brand || '',
                 category: item.category || '',
                 color: item.color || '',
@@ -291,6 +275,7 @@ export async function saveWardrobeItem(item) {
             image: newItem.image_url,
             title: newItem.title,
             description: newItem.description,
+            ai_description: newItem.ai_description,
             brand: newItem.brand,
             category: newItem.category,
             color: newItem.color,
@@ -303,7 +288,7 @@ export async function saveWardrobeItem(item) {
         }
     } catch (error) {
         console.error('Error saving wardrobe item:', error)
-        throw new Error('Failed to save item')
+        throw error // Rethrow original error to context (e.g. Upload failed)
     }
 }
 
@@ -447,20 +432,107 @@ export function imageToBase64(file) {
     })
 }
 
-export function compressImage(base64, maxWidth = 400) {
+export function compressImage(base64, maxDimension = 800) {
     return new Promise((resolve) => {
         const img = new Image()
         img.onload = () => {
             const canvas = document.createElement('canvas')
-            const ratio = maxWidth / img.width
-            canvas.width = maxWidth
-            canvas.height = img.height * ratio
+
+            // Calculate dimensions maintaining aspect ratio
+            let width = img.width
+            let height = img.height
+
+            if (width > height && width > maxDimension) {
+                height = (height / width) * maxDimension
+                width = maxDimension
+            } else if (height > maxDimension) {
+                width = (width / height) * maxDimension
+                height = maxDimension
+            }
+
+            canvas.width = width
+            canvas.height = height
             const ctx = canvas.getContext('2d')
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-            resolve(canvas.toDataURL('image/jpeg', 0.7))
+
+            // Use WebP for better compression (50-70% smaller than JPEG)
+            // Quality 0.7 gives good balance of quality vs size
+            const webpSupported = canvas.toDataURL('image/webp').startsWith('data:image/webp')
+            if (webpSupported) {
+                resolve(canvas.toDataURL('image/webp', 0.7))
+            } else {
+                // Fallback to JPEG for older browsers
+                resolve(canvas.toDataURL('image/jpeg', 0.7))
+            }
         }
         img.src = base64
     })
+}
+
+/**
+ * Upload an image to Supabase Storage (closet-items bucket)
+ * @param {string} base64Data - Base64 encoded image data
+ * @returns {Promise<string>} - Public URL of uploaded image
+ */
+export async function uploadImageToStorage(base64Data) {
+    try {
+        const session = await getAuthSession()
+        const user = session?.user
+        if (!user || !user.id) throw new Error('Not logged in or missing user ID')
+
+        // Determine content type and extension from base64
+        const isWebP = base64Data.includes('data:image/webp')
+        const contentType = isWebP ? 'image/webp' : 'image/jpeg'
+        const extension = isWebP ? 'webp' : 'jpg'
+
+        const fileName = `${user.id}/${Date.now()}.${extension}`
+        const rawBase64 = base64Data.split(',')[1]
+
+        // Convert base64 to Blob for upload (more reliable than ArrayBuffer for Supabase)
+        const binaryString = atob(rawBase64)
+        const len = binaryString.length
+        const bytes = new Uint8Array(len)
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i)
+        }
+        const blob = new Blob([bytes], { type: contentType })
+
+        console.log(`Uploading ${fileName} (${bytes.length} bytes) type: ${contentType} via REST API...`)
+
+        // Construct URL for direct REST API
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/closet-items/${fileName}`
+
+        console.log('Target URL:', uploadUrl)
+
+        // Execute fetch directly to bypass SDK issues
+        const response = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': contentType,
+                'x-upsert': 'false'
+            },
+            body: bytes
+        })
+
+        if (!response.ok) {
+            const errorText = await response.text()
+            console.error('REST Upload Failed:', response.status, errorText)
+            throw new Error(`Upload failed (${response.status}): ${errorText}`)
+        }
+
+        const data = await response.json()
+
+        // Construct public URL manually
+        const publicUrl = `${supabaseUrl}/storage/v1/object/public/closet-items/${fileName}`
+
+        console.log('Upload successful via REST, URL:', publicUrl)
+        return publicUrl
+    } catch (error) {
+        console.error('Error uploading to storage:', error)
+        throw error // Propagate error to caller
+    }
 }
 
 // ============================================

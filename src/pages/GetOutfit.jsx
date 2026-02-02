@@ -18,7 +18,9 @@ const MOODS = [
     { id: 'wedding', label: 'Wedding' },
     { id: 'vacation', label: 'Vacation' },
     { id: 'gym', label: 'Gym' },
-    { id: 'brunch', label: 'Brunch' }
+    { id: 'brunch', label: 'Brunch' },
+    { id: 'cozy', label: 'Cozy Night In' },
+    { id: 'interview', label: 'Interview' }
 ]
 
 const BODY_TYPES = ['Slim', 'Athletic', 'Regular', 'Curvy', 'Plus Size']
@@ -264,7 +266,7 @@ export default function GetOutfit() {
 
                 // Auto-save to recent_outfits (source of truth for generation history)
                 try {
-                    const outfitToSave = { ...newOutfit, description: desc }
+                    const outfitToSave = { ...newOutfit, description: desc, reason: desc }
                     const saved = await saveRecentOutfit(outfitToSave, preferences)
                     if (saved) {
                         setActiveOutfitId(saved.id)
@@ -379,9 +381,19 @@ export default function GetOutfit() {
 
     return (
         <div className="container">
-            <div style={{ marginBottom: '1rem' }}>
-                <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>Get Your Outfit</h1>
-                <p className="text-muted text-sm">AI styles you from wardrobe + shop</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                <div>
+                    <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>Get Your Outfit</h1>
+                    <p className="text-muted text-sm">AI styles you from wardrobe + shop</p>
+                </div>
+                <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowPreferences(true)}
+                    style={{ gap: '0.25rem', fontSize: '0.75rem' }}
+                >
+                    <Gear size={16} />
+                    Preferences
+                </button>
             </div>
 
             {/* Source Toggle */}
@@ -419,15 +431,7 @@ export default function GetOutfit() {
                 </button>
             </div>
 
-            {/* Set Preferences Button - Below Source Toggle */}
-            <button
-                className="btn btn-outline btn-sm w-full"
-                onClick={() => setShowPreferences(true)}
-                style={{ marginBottom: '1rem', gap: '0.375rem' }}
-            >
-                <Gear size={14} />
-                Set Style Preferences
-            </button>
+
 
             {/* Warning if not enough items */}
             {/* Warning if no wardrobe items and source includes closet */}
@@ -460,37 +464,108 @@ export default function GetOutfit() {
                 </motion.div>
             )}
 
-            {/* Mood Selection - Horizontal Scroll */}
+            {/* Mood/Occasion Input - ChatGPT Style */}
             <section style={{ marginBottom: '1rem' }}>
-                <h2 style={{ fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: 600 }}>Select Mood</h2>
+                <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
+                    <input
+                        type="text"
+                        value={MOODS.find(m => m.id === selectedMood)?.label || selectedMood || ''}
+                        onChange={(e) => {
+                            const val = e.target.value.toLowerCase().trim()
+                            const foundMood = MOODS.find(m => m.label.toLowerCase() === val || m.id === val)
+                            if (foundMood) {
+                                handleMoodChange(foundMood.id)
+                            } else {
+                                setSelectedMood(val)
+                            }
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && selectedMood) {
+                                handleGenerateOutfit()
+                            }
+                        }}
+                        placeholder="What's the occasion? (e.g., Party, Office, Date Night)"
+                        style={{
+                            width: '100%',
+                            padding: '0.875rem 3rem 0.875rem 1rem',
+                            fontSize: '0.9375rem',
+                            border: '2px solid hsl(var(--border))',
+                            borderRadius: 'var(--radius-xl)',
+                            background: 'hsl(var(--card))',
+                            color: 'hsl(var(--foreground))',
+                            outline: 'none',
+                            transition: 'border-color 0.2s, box-shadow 0.2s'
+                        }}
+                        onFocus={(e) => {
+                            e.target.style.borderColor = 'hsl(var(--primary))'
+                            e.target.style.boxShadow = '0 0 0 3px hsl(var(--primary) / 0.1)'
+                        }}
+                        onBlur={(e) => {
+                            e.target.style.borderColor = 'hsl(var(--border))'
+                            e.target.style.boxShadow = 'none'
+                        }}
+                    />
+                    <button
+                        onClick={() => selectedMood && handleGenerateOutfit()}
+                        disabled={!selectedMood || isGenerating}
+                        style={{
+                            position: 'absolute',
+                            right: '0.5rem',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: 'var(--radius-lg)',
+                            background: selectedMood ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
+                            color: selectedMood ? 'white' : 'hsl(var(--muted-foreground))',
+                            border: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: selectedMood ? 'pointer' : 'not-allowed',
+                            transition: 'background 0.2s'
+                        }}
+                    >
+                        {isGenerating ? <SpinnerGap size={18} className="animate-spin" /> : <MagicWand size={18} weight="fill" />}
+                    </button>
+                </div>
+
+                {/* Occasion Chips */}
                 <div style={{
                     display: 'flex',
+                    flexWrap: 'wrap',
                     gap: '0.5rem',
-                    overflowX: 'auto',
-                    paddingBottom: '0.5rem',
-                    scrollbarWidth: 'none',
-                    msOverflowStyle: 'none'
+                    justifyContent: 'center'
                 }}>
-                    {MOODS.map((mood) => (
+                    {MOODS.map((mood, idx) => (
                         <motion.button
                             key={mood.id}
-                            whileTap={{ scale: 0.97 }}
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.2, delay: idx * 0.03 }}
+                            whileTap={{ scale: 0.95 }}
                             onClick={() => handleMoodChange(mood.id)}
                             style={{
-                                padding: '0.625rem 1rem',
-                                border: selectedMood === mood.id
-                                    ? '2px solid hsl(var(--primary))'
-                                    : '1px solid hsl(var(--border))',
-                                borderRadius: 'var(--radius-full)',
-                                background: selectedMood === mood.id
-                                    ? 'hsl(var(--primary))'
-                                    : 'white',
-                                color: selectedMood === mood.id ? 'white' : 'hsl(var(--foreground))',
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                                fontSize: '0.8125rem',
+                                padding: '0.5rem 0.875rem',
+                                fontSize: '0.75rem',
                                 fontWeight: 500,
-                                flexShrink: 0
+                                background: 'hsl(var(--muted))',
+                                border: '1px solid hsl(var(--border))',
+                                borderRadius: 'var(--radius-full)',
+                                color: 'hsl(var(--foreground))',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                whiteSpace: 'nowrap'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.target.style.background = 'hsl(var(--primary) / 0.1)'
+                                e.target.style.borderColor = 'hsl(var(--primary) / 0.3)'
+                                e.target.style.color = 'hsl(var(--primary))'
+                            }}
+                            onMouseLeave={(e) => {
+                                e.target.style.background = 'hsl(var(--muted))'
+                                e.target.style.borderColor = 'hsl(var(--border))'
+                                e.target.style.color = 'hsl(var(--foreground))'
                             }}
                         >
                             {mood.label}
@@ -499,26 +574,7 @@ export default function GetOutfit() {
                 </div>
             </section>
 
-            {/* Generate Button */}
-            <div style={{ marginBottom: '1.5rem' }}>
-                <button
-                    className="btn btn-primary w-full"
-                    onClick={handleGenerateOutfit}
-                    disabled={!selectedMood || isGenerating}
-                >
-                    {isGenerating ? (
-                        <>
-                            <SpinnerGap size={18} className="animate-spin" />
-                            Styling...
-                        </>
-                    ) : (
-                        <>
-                            <MagicWand size={18} />
-                            Generate Outfit
-                        </>
-                    )}
-                </button>
-            </div>
+
 
             {/* Outfit Display */}
             <AnimatePresence mode="wait">
@@ -823,78 +879,8 @@ export default function GetOutfit() {
                 </div>
             )}
 
-            {/* Saved Collections and Recent Generations - Tabbed Interface */}
-            <div style={{ paddingBottom: '2rem' }}>
-                {/* Tab Headers */}
-                <div style={{
-                    display: 'flex',
-                    gap: '0.5rem',
-                    marginBottom: '1rem',
-                    borderBottom: '1px solid hsl(var(--border))',
-                    paddingBottom: '0.5rem'
-                }}>
-                    <button
-                        onClick={() => setActiveTab('saved')}
-                        style={{
-                            padding: '0.5rem 1rem',
-                            fontSize: '0.875rem',
-                            fontWeight: 600,
-                            background: activeTab === 'saved' ? 'hsl(var(--primary))' : 'transparent',
-                            color: activeTab === 'saved' ? 'white' : 'hsl(var(--foreground))',
-                            border: 'none',
-                            borderRadius: '0.5rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.375rem',
-                            transition: 'all 0.2s ease'
-                        }}
-                    >
-                        <Heart size={16} weight={activeTab === 'saved' ? 'fill' : 'regular'} />
-                        Saved ({savedOutfits.length})
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('recent')}
-                        style={{
-                            padding: '0.5rem 1rem',
-                            fontSize: '0.875rem',
-                            fontWeight: 600,
-                            background: activeTab === 'recent' ? 'hsl(var(--primary))' : 'transparent',
-                            color: activeTab === 'recent' ? 'white' : 'hsl(var(--foreground))',
-                            border: 'none',
-                            borderRadius: '0.5rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.375rem',
-                            transition: 'all 0.2s ease'
-                        }}
-                    >
-                        <ClockCounterClockwise size={16} />
-                        Recent ({recentOutfits.length})
-                    </button>
-                </div>
 
-                {/* Tab Content */}
-                {activeTab === 'saved' && (
-                    <OutfitList
-                        title=""
-                        icon={Heart}
-                        outfits={savedOutfits}
-                        emptyMsg="No favorites yet. Generate looks and save the ones you love!"
-                        onOutfitClick={handleOutfitClick}
-                    />
-                )}
-                {activeTab === 'recent' && (
-                    <OutfitList
-                        title=""
-                        icon={ClockCounterClockwise}
-                        outfits={recentOutfits}
-                        emptyMsg="Your styling history will appear here."
-                        onOutfitClick={handleOutfitClick}
-                    />
-                )}
-            </div>
+
 
             {/* Preferences Modal */}
             <AnimatePresence>
