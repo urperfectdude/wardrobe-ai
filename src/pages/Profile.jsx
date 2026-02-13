@@ -1,35 +1,24 @@
 import { useState, useEffect } from 'react'
-import { User, PencilSimple, At, Heart, SignOut, Check, SpinnerGap, Gear, CaretRight, Palette, TShirt, ShoppingBag } from '@phosphor-icons/react'
+import { User, PencilSimple, Heart, SignOut, SpinnerGap, TShirt, ShoppingBag } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../lib/supabase'
-import { getPreferences, savePreferences, getPurchaseRequests, updatePurchaseRequest, getSavedOutfits, getRecentOutfits } from '../utils/storage'
-import { EXISTING_CATEGORY4, EXISTING_COLORS } from '../utils/openaiAnalysis'
+import { getPreferences, getPurchaseRequests, updatePurchaseRequest, getSavedOutfits, getRecentOutfits } from '../utils/storage'
 import OnboardingFlow from '../components/OnboardingFlow'
+import PreferencesFlow from '../components/PreferencesFlow'
 import PublicOutfitModal from '../components/PublicOutfitModal'
-import DualRangeSlider from '../components/DualRangeSlider'
-
-const BODY_TYPES = ['Slim', 'Athletic', 'Regular', 'Curvy', 'Plus Size']
 
 export default function Profile() {
     const navigate = useNavigate()
     const { user, userProfile, loading: authLoading, signOut, refreshProfile } = useAuth()
     const [showOnboarding, setShowOnboarding] = useState(false)
-    const [editMode, setEditMode] = useState(false)
-    const [saving, setSaving] = useState(false)
+    const [showPreferencesFlow, setShowPreferencesFlow] = useState(false)
     const [requests, setRequests] = useState([])
     const [savedOutfits, setSavedOutfits] = useState([])
     const [recentOutfits, setRecentOutfits] = useState([])
     const [loadingRequests, setLoadingRequests] = useState(true)
-    const [activeTab, setActiveTab] = useState('outfits') // 'outfits' or 'selling' or 'buying'
-    const [isPrefsOpen, setIsPrefsOpen] = useState(false)
+    const [activeTab, setActiveTab] = useState('outfits')
     const [selectedOutfit, setSelectedOutfit] = useState(null)
-
-    const [profile, setProfile] = useState({
-        name: '',
-        username: ''
-    })
 
     const [preferences, setPreferences] = useState({
         thriftPreference: 'both',
@@ -51,15 +40,7 @@ export default function Profile() {
         loadRecentOutfits()
     }, [])
 
-    // Update profile state when userProfile changes (but don't reload preferences)
-    useEffect(() => {
-        if (userProfile) {
-            setProfile({
-                name: userProfile.name || '',
-                username: userProfile.username || ''
-            })
-        }
-    }, [userProfile])
+
 
     const loadSavedOutfits = async () => {
         try {
@@ -102,37 +83,17 @@ export default function Profile() {
         }
     }
 
-    const handleSaveProfile = async () => {
-        setSaving(true)
-        try {
-            await supabase.from('user_profiles').upsert({
-                user_id: user.id,
-                name: profile.name,
-                username: profile.username
-            })
-            await savePreferences(preferences)
-            await refreshProfile()
-            setEditMode(false)
-        } catch (error) {
-            console.error('Error saving profile:', error)
-        } finally {
-            setSaving(false)
-        }
-    }
+
 
     const handleSignOut = async () => {
         await signOut()
         navigate('/')
     }
 
-    const togglePreference = (type, value) => {
-        setPreferences(prev => {
-            const current = prev[type] || []
-            const updated = current.includes(value)
-                ? current.filter(v => v !== value)
-                : [...current, value]
-            return { ...prev, [type]: updated }
-        })
+    const handlePreferencesComplete = async () => {
+        setShowPreferencesFlow(false)
+        loadPreferences()
+        await refreshProfile() // refresh userProfile so name updates immediately
     }
 
     const handleUpdateRequestStatus = async (requestId, status) => {
@@ -210,7 +171,7 @@ export default function Profile() {
                 <p className="text-muted text-sm">Manage your account & preferences</p>
             </div>
 
-            {/* Profile Card */}
+            {/* Profile + Preferences Card */}
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -222,7 +183,8 @@ export default function Profile() {
                     border: '1px solid hsl(var(--border))'
                 }}
             >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                {/* Avatar + Name + Email row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
                     {avatarUrl ? (
                         <img src={avatarUrl} alt="Profile" style={{ width: '56px', height: '56px', borderRadius: '50%' }} />
                     ) : (
@@ -242,307 +204,129 @@ export default function Profile() {
                         </div>
                     )}
                     <div style={{ flex: 1 }}>
-                        {editMode ? (
-                            <input
-                                type="text"
-                                className="input"
-                                value={profile.name}
-                                onChange={(e) => setProfile(prev => ({ ...prev, name: e.target.value }))}
-                                placeholder="Your name"
-                                style={{ marginBottom: '0.5rem' }}
-                            />
-                        ) : (
-                            <h2 style={{ fontSize: '1.125rem', margin: 0 }}>{displayName}</h2>
-                        )}
-                        {editMode ? (
-                            <div style={{ position: 'relative' }}>
-                                <At size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'hsl(var(--muted-foreground))' }} />
-                                <input
-                                    type="text"
-                                    className="input"
-                                    value={profile.username}
-                                    onChange={(e) => setProfile(prev => ({ ...prev, username: e.target.value.toLowerCase().replace(/\s/g, '') }))}
-                                    placeholder="username"
-                                    style={{ paddingLeft: '2rem' }}
-                                />
-                            </div>
-                        ) : (
-                            <p className="text-muted text-sm" style={{ margin: 0 }}>
-                                {userProfile?.username ? `@${userProfile.username}` : user?.email}
-                            </p>
-                        )}
+                        <h2 style={{ fontSize: '1.125rem', margin: 0 }}>{displayName}</h2>
+                        <p className="text-muted text-sm" style={{ margin: 0 }}>{user?.email}</p>
                     </div>
-                    {/* Pencil Edit Icon */}
-                    {!editMode && (
-                        <button
-                            onClick={() => {
-                                // Autofill with existing data when entering edit mode
-                                setProfile({
-                                    name: userProfile?.name || user?.user_metadata?.full_name || '',
-                                    username: userProfile?.username || ''
-                                })
-                                setEditMode(true)
-                            }}
-                            style={{
-                                width: '40px',
-                                height: '40px',
-                                borderRadius: 'var(--radius-md)',
-                                background: 'hsl(var(--secondary))',
-                                border: '1px solid hsl(var(--border))',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: 'pointer',
-                                color: 'hsl(var(--muted-foreground))',
-                                flexShrink: 0
-                            }}
-                        >
-                            <PencilSimple size={18} weight="bold" />
-                        </button>
-                    )}
+                    {/* Edit pencil → opens PreferencesFlow */}
+                    <button
+                        onClick={() => setShowPreferencesFlow(true)}
+                        style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: 'var(--radius-md)',
+                            background: 'hsl(var(--secondary))',
+                            border: '1px solid hsl(var(--border))',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            color: 'hsl(var(--muted-foreground))',
+                            flexShrink: 0
+                        }}
+                        title="Edit Preferences"
+                    >
+                        <PencilSimple size={18} weight="bold" />
+                    </button>
                 </div>
 
-                {editMode && (
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                        <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setEditMode(false)}>
-                            Cancel
-                        </button>
-                        <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSaveProfile} disabled={saving}>
-                            {saving ? <SpinnerGap size={16} className="animate-spin" /> : <Check size={16} />}
-                            Save
-                        </button>
-                    </div>
+                {/* Divider */}
+                <div style={{ height: '1px', background: 'hsl(var(--border))', marginBottom: '1rem' }} />
+
+                {/* Preference tags */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {preferences.gender && (
+                        <div>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Gender</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                <span className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>{preferences.gender}</span>
+                                {preferences.bodyType && <span className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>{preferences.bodyType}</span>}
+                            </div>
+                        </div>
+                    )}
+
+                    {preferences.preferredStyles?.length > 0 && (
+                        <div>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Styles</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                {preferences.preferredStyles.map(s => (
+                                    <span key={s} className="chip chip-outline active" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>{s}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {preferences.preferredColors?.length > 0 && (
+                        <div>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Colors</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                {preferences.preferredColors.map(c => (
+                                    <span key={c} className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>{c}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {preferences.fitType?.length > 0 && (
+                        <div>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fit & Size</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                {preferences.fitType.map(f => (
+                                    <span key={f} className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>{f}</span>
+                                ))}
+                                {preferences.sizes?.map(s => (
+                                    <span key={s} className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>{s}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {preferences.budget && (
+                        <div>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Budget</span>
+                            <div style={{ marginTop: '0.25rem' }}>
+                                <span className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>
+                                    ₹{(preferences.budget[0] || 500).toLocaleString()} — ₹{(preferences.budget[1] || 5000).toLocaleString()}
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
+                    {preferences.thriftPreference && preferences.thriftPreference !== 'both' && (
+                        <div>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Shopping</span>
+                            <div style={{ marginTop: '0.25rem' }}>
+                                <span className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default', textTransform: 'capitalize' }}>
+                                    {preferences.thriftPreference}
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Empty state */}
+                    {!preferences.gender && !preferences.preferredStyles?.length && !preferences.preferredColors?.length && (
+                        <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+                            <p className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>No preferences set yet</p>
+                            <button className="btn btn-primary btn-sm" onClick={() => setShowPreferencesFlow(true)}>
+                                Set Up Preferences ✨
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+
+            {/* Preferences Flow Modal */}
+            <AnimatePresence>
+                {showPreferencesFlow && (
+                    <PreferencesFlow
+                        isOpen={showPreferencesFlow}
+                        onClose={() => setShowPreferencesFlow(false)}
+                        onComplete={handlePreferencesComplete}
+                        existingPreferences={preferences}
+                        existingProfile={userProfile}
+                        mode="edit"
+                    />
                 )}
-            </motion.div>
-
-            {/* Personal Info & Style Specs */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                style={{
-                    background: 'hsl(var(--card))',
-                    borderRadius: 'var(--radius-xl)',
-                    padding: '1.25rem',
-                    marginBottom: '1rem',
-                    border: '1px solid hsl(var(--border))'
-                }}
-            >
-                {/* Profile Detail Header */}
-                <div style={{ marginBottom: '1rem', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '0.75rem' }}>
-                    <h3 style={{ fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '0.375rem', margin: 0 }}>
-                        <Gear size={16} style={{ color: 'hsl(var(--muted-foreground))' }} />
-                        Personal Styling Info
-                    </h3>
-                </div>
-
-                {/* Personal Info Fields */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                    <div>
-                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Body Type</label>
-                        <select
-                            className="input"
-                            value={preferences.bodyType}
-                            onChange={(e) => setPreferences(prev => ({ ...prev, bodyType: e.target.value }))}
-                            style={{ fontSize: '0.8125rem', padding: '0.5rem 0.75rem', height: 'auto', minHeight: 'unset' }}
-                        >
-                            <option value="">Select...</option>
-                            {BODY_TYPES.map(type => (
-                                <option key={type} value={type}>{type}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Gender / Persona</label>
-                        <select
-                            className="input"
-                            value={preferences.gender}
-                            onChange={(e) => setPreferences(prev => ({ ...prev, gender: e.target.value }))}
-                            style={{ fontSize: '0.8125rem', padding: '0.5rem 0.75rem', height: 'auto', minHeight: 'unset' }}
-                        >
-                            <option value="">Select...</option>
-                            <option value="Men">Men</option>
-                            <option value="Women">Women</option>
-                            <option value="Unisex">Unisex</option>
-                        </select>
-                    </div>
-                </div>
-
-                {/* Collapsible Style Specs */}
-                <div
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        padding: '0.75rem',
-                        background: 'hsl(var(--secondary))',
-                        borderRadius: 'var(--radius-md)',
-                        transition: 'background 0.2s'
-                    }}
-                    onClick={() => setIsPrefsOpen(!isPrefsOpen)}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Heart size={16} className={isPrefsOpen ? 'fill-current' : ''} style={{ color: 'hsl(var(--accent))' }} />
-                        <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Detailed Style Specs</span>
-                    </div>
-                    <CaretRight size={18} style={{ transform: isPrefsOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
-                </div>
-
-                <AnimatePresence>
-                    {isPrefsOpen && (
-                        <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            style={{ overflow: 'hidden' }}
-                        >
-                            <div style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-                                {/* Thrift Preference */}
-                                <div>
-                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>Shopping Preference</label>
-                                    <div style={{ display: 'flex', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-sm)', padding: '2px' }}>
-                                        {['new', 'both', 'thrifted'].map(opt => (
-                                            <button
-                                                key={opt}
-                                                className={`btn btn-sm ${preferences.thriftPreference === opt ? 'btn-white shadow-sm' : 'btn-ghost'}`}
-                                                onClick={() => setPreferences(prev => ({ ...prev, thriftPreference: opt }))}
-                                                style={{
-                                                    flex: 1,
-                                                    textTransform: 'capitalize',
-                                                    padding: '2px 8px',
-                                                    fontSize: '0.6875rem',
-                                                    height: '28px',
-                                                    minHeight: 'unset',
-                                                    color: preferences.thriftPreference === opt ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))'
-                                                }}
-                                            >
-                                                {opt}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Preferred Styles */}
-                                <div>
-                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Styles</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '100px', overflowY: 'auto' }}>
-                                        {EXISTING_CATEGORY4.slice(0, 20).map(style => (
-                                            <button
-                                                key={style}
-                                                type="button"
-                                                className={`chip chip-outline ${preferences.preferredStyles?.includes(style) ? 'active' : ''}`}
-                                                onClick={() => togglePreference('preferredStyles', style)}
-                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                                            >
-                                                {style}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Fit Type */}
-                                <div>
-                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Fit Type</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                        {['Slim', 'Regular', 'Relaxed', 'Oversized', 'Loose', 'Athletic'].map(type => (
-                                            <button
-                                                key={type}
-                                                type="button"
-                                                className={`chip chip-outline ${preferences.fitType?.includes(type) ? 'active' : ''}`}
-                                                onClick={() => togglePreference('fitType', type)}
-                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                                            >
-                                                {type}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Sizes */}
-                                <div>
-                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Sizes</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                        {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map(size => (
-                                            <button
-                                                key={size}
-                                                type="button"
-                                                className={`chip chip-outline ${preferences.sizes?.includes(size) ? 'active' : ''}`}
-                                                onClick={() => togglePreference('sizes', size)}
-                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px', minWidth: '32px', justifyContent: 'center' }}
-                                            >
-                                                {size}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Preferred Colors */}
-                                <div>
-                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Colors</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                        {EXISTING_COLORS.slice(0, 15).map(color => (
-                                            <button
-                                                key={color}
-                                                type="button"
-                                                className={`chip chip-outline ${preferences.preferredColors?.includes(color) ? 'active' : ''}`}
-                                                onClick={() => togglePreference('preferredColors', color)}
-                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                                            >
-                                                {color}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Materials */}
-                                <div>
-                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Materials</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                        {['Cotton', 'Polyester', 'Silk', 'Denim', 'Wool', 'Linen', 'Leather', 'Velvet', 'Satin', 'Rayon', 'Nylon'].map(mat => (
-                                            <button
-                                                key={mat}
-                                                type="button"
-                                                className={`chip chip-outline ${preferences.materials?.includes(mat) ? 'active' : ''}`}
-                                                onClick={() => togglePreference('materials', mat)}
-                                                style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                                            >
-                                                {mat}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Budget Slider */}
-                                <div>
-                                    <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>Budget Range (₹)</label>
-                                    <DualRangeSlider
-                                        min={0}
-                                        max={20000}
-                                        step={500}
-                                        value={Array.isArray(preferences.budget) ? preferences.budget : [500, 5000]}
-                                        onChange={(newBudget) => setPreferences(prev => ({
-                                            ...prev,
-                                            budget: newBudget
-                                        }))}
-                                    />
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
-                <button
-                    className="btn btn-primary w-full"
-                    onClick={handleSaveProfile}
-                    disabled={saving}
-                    style={{ marginTop: '1.5rem' }}
-                >
-                    {saving ? <SpinnerGap size={16} className="animate-spin" /> : <Check size={16} />}
-                    Save All Preferences
-                </button>
-            </motion.div>
+            </AnimatePresence>
 
 
             {/* Content Tabs - Saved and Recent Outfits */}

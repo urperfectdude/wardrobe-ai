@@ -190,9 +190,13 @@ export async function getProducts(filters = {}) {
             image_url: p.image_url,
             product_url: p.product_url,
             category: p.category,
-            color: p.color,
-            style: p.style,
+            color: p.color || '',
+            style: p.style || '',
             styles: p.styles || [],
+            gender: p.gender || '',
+            fit_type: p.fit_type || '',
+            sizes: p.sizes || [],
+            material: p.material || '',
             isThrifted: p.is_thrifted
         }))
 
@@ -311,7 +315,7 @@ export async function deleteWardrobeItem(id) {
 }
 
 // ============================================
-// USER PREFERENCES
+// USER PREFERENCES (stored in user_profiles)
 // ============================================
 
 export async function savePreferences(prefs) {
@@ -337,8 +341,8 @@ export async function savePreferences(prefs) {
             updated_at: new Date().toISOString()
         }
 
-        await supabaseFetch('user_preferences', {
-            method: 'POST', // UPSERT is POST w/ Prefer: resolution=merge-duplicates in header for some dbs, but Supabase REST supports upsert via POST with on_conflict
+        await supabaseFetch('user_profiles', {
+            method: 'POST',
             headers: { 'Prefer': 'resolution=merge-duplicates' },
             body: dbPrefs,
             query: 'on_conflict=user_id'
@@ -362,32 +366,27 @@ export async function getPreferences() {
         }
 
         try {
-            const data = await supabaseFetch('user_preferences', {
+            const data = await supabaseFetch('user_profiles', {
                 query: `user_id=eq.${user.id}`,
-                headers: { 'Accept': 'application/vnd.pgrst.object+json' } // Single object
+                headers: { 'Accept': 'application/vnd.pgrst.object+json' }
             })
 
-            // supabaseFetch returns JSON. If single object requested, might be obj or array if not strict.
-            // Our helper returns result. 
-            // Postgrest returns error if .single() is not satisfied via Accept header.
-            // If Accept header not set properly, it returns array.
-            const prefs = Array.isArray(data) ? data[0] : data
+            const profile = Array.isArray(data) ? data[0] : data
 
-            if (!prefs) return getDefaultPreferences()
+            if (!profile) return getDefaultPreferences()
 
             return {
-                thriftPreference: prefs.thrift_preference || 'both',
-                sizes: prefs.sizes || [],
-                preferredColors: prefs.preferred_colors || [],
-                budget: prefs.budget || [500, 5000],
-                fitType: prefs.fit_type || [],
-                preferredStyles: prefs.preferred_styles || [],
-                materials: prefs.materials || [],
-                bodyType: prefs.body_type || '',
-                gender: prefs.gender || ''
+                thriftPreference: profile.thrift_preference || 'both',
+                sizes: profile.sizes || [],
+                preferredColors: profile.preferred_colors || [],
+                budget: profile.budget || [500, 5000],
+                fitType: profile.fit_type || [],
+                preferredStyles: profile.preferred_styles || [],
+                materials: profile.materials || [],
+                bodyType: profile.body_type || '',
+                gender: profile.gender || ''
             }
         } catch (e) {
-            // If 406 or empty
             return getDefaultPreferences()
         }
     } catch (error) {

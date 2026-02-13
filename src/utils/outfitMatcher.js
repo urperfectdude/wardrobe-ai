@@ -344,4 +344,59 @@ export function getMissingItems(wardrobeItems, occasion) {
     return suggestions
 }
 
+// Score how well a product matches user preferences
+export function scoreProductMatch(product, preferences) {
+    if (!preferences) return 0
+    let score = 0
+
+    // Gender match (+20)
+    const prodGender = (product.gender || '').toLowerCase()
+    const prefGender = (preferences.gender || '').toLowerCase()
+    if (prodGender && prefGender) {
+        if (prodGender === prefGender || prodGender === 'unisex') {
+            score += 20
+        }
+    }
+
+    // Color match (+15)
+    const prodColor = (product.color || '').toLowerCase()
+    const prefColors = (preferences.preferredColors || []).map(c => c.toLowerCase())
+    if (prodColor && prefColors.length > 0 && prefColors.includes(prodColor)) {
+        score += 15
+    }
+
+    // Style match (+15)
+    const prodStyle = (product.style || product.category4 || '').toLowerCase()
+    const prodStyles = (product.styles || []).map(s => s.toLowerCase())
+    const prefStyles = (preferences.preferredStyles || []).map(s => s.toLowerCase())
+    if (prefStyles.length > 0) {
+        if (prefStyles.includes(prodStyle) || prodStyles.some(s => prefStyles.includes(s))) {
+            score += 15
+        }
+    }
+
+    // Material match (+10)
+    const prodMaterial = (product.material || '').toLowerCase()
+    const prefMaterials = (preferences.materials || []).map(m => m.toLowerCase())
+    if (prodMaterial && prefMaterials.length > 0 && prefMaterials.includes(prodMaterial)) {
+        score += 10
+    }
+
+    // Fit type match (+10)
+    const prodFit = (product.fit_type || '').toLowerCase()
+    const prefFits = (preferences.fitType || []).map(f => f.toLowerCase())
+    if (prodFit && prefFits.length > 0 && prefFits.includes(prodFit)) {
+        score += 10
+    }
+
+    // Size overlap (+10)
+    const prodSizes = (product.sizes || []).map(s => s.toUpperCase())
+    const prefSizes = (preferences.sizes || []).map(s => s.toUpperCase())
+    if (prodSizes.length > 0 && prefSizes.length > 0 && prodSizes.some(s => prefSizes.includes(s))) {
+        score += 10
+    }
+
+    return score
+}
+
 export { OCCASION_CATEGORIES, COLOR_HARMONIES }

@@ -3,12 +3,14 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { MagicWand, Shuffle, ShoppingBag, Sparkle, ArrowRight, X, Heart, Check, ArrowSquareOut, SpinnerGap, TShirt, Gear, PencilSimple, CaretDown, CaretUp, ClockCounterClockwise, BookmarkSimple } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getWardrobeItems, getProducts, savePreferences, getPreferences, saveOutfit, markOutfitAsSaved, getRecentOutfits, getSavedOutfits, saveRecentOutfit, saveRecentToSaved } from '../utils/storage'
-import { generateOutfit, OCCASION_CATEGORIES } from '../utils/outfitMatcher'
+import { generateOutfit, OCCASION_CATEGORIES, scoreProductMatch } from '../utils/outfitMatcher'
 import { EXISTING_CATEGORY4, EXISTING_COLORS, generateOutfitDescription } from '../utils/openaiAnalysis'
 import { useAuth } from '../contexts/AuthContext'
 import OnboardingFlow from '../components/OnboardingFlow'
-import DualRangeSlider from '../components/DualRangeSlider'
+import PreferencesFlow from '../components/PreferencesFlow'
 import ParameterSelector from '../components/ParameterSelector'
+import ShopSuggestions from '../components/ShopSuggestions'
+import { supabase } from '../lib/supabase'
 
 const MOODS = [
     { id: 'party', label: 'Party' },
@@ -141,11 +143,17 @@ export default function GetOutfit() {
         preferredStyles: [],
         materials: []
     })
-    const [savingPrefs, setSavingPrefs] = useState(false)
     const [recentOutfits, setRecentOutfits] = useState([])
     const [savedOutfits, setSavedOutfits] = useState([])
     const [isPublic, setIsPublic] = useState(false)
     const [isSavingOutfit, setIsSavingOutfit] = useState(false)
+
+    // Shop State
+    const [shopItems, setShopItems] = useState([])
+    const [shopLoading, setShopLoading] = useState(false)
+    const [shopQuery, setShopQuery] = useState('')
+    const [priceRange, setPriceRange] = useState([20, 500])
+
     const { user } = useAuth()
 
     // Load wardrobe items and shop products
@@ -222,24 +230,30 @@ export default function GetOutfit() {
             }
 
             if (source === 'shop' || source === 'both') {
-                const occasionInfo = OCCASION_CATEGORIES[mood]
-                let matchingProducts = shopProducts
+                // Score each product against user preferences
+                const scoredProducts = shopProducts.map(product => ({
+                    ...product,
+                    prefScore: scoreProductMatch(product, preferences)
+                }))
 
+                // Also factor in occasion matching
+                const occasionInfo = OCCASION_CATEGORIES[mood]
                 if (occasionInfo) {
-                    matchingProducts = shopProducts.filter(product => {
+                    scoredProducts.forEach(product => {
                         const matchesStyle = occasionInfo.styles?.some(
-                            style => product.category4?.toLowerCase().includes(style.toLowerCase())
+                            style => (product.category4 || product.style || '').toLowerCase().includes(style.toLowerCase())
                         )
-                        return matchesStyle || Math.random() > 0.7
+                        if (matchesStyle) product.prefScore += 10
+                        const matchesColor = occasionInfo.colors?.includes('any') ||
+                            occasionInfo.colors?.some(c => (product.color || '').toLowerCase() === c)
+                        if (matchesColor) product.prefScore += 5
                     })
                 }
 
-                if (matchingProducts.length === 0) {
-                    matchingProducts = shopProducts
-                }
+                // Sort by preference score (highest first), add small randomness for variety
+                scoredProducts.sort((a, b) => (b.prefScore - a.prefScore) + (Math.random() * 4 - 2))
 
-                const shuffled = [...matchingProducts].sort(() => Math.random() - 0.5)
-                const shopSuggestions = shuffled.slice(0, source === 'shop' ? 4 : 2).map(p => ({
+                const shopSuggestions = scoredProducts.slice(0, source === 'shop' ? 4 : 2).map(p => ({
                     ...p,
                     source: 'shop'
                 }))
@@ -336,25 +350,13 @@ export default function GetOutfit() {
     }
 
 
-    const togglePreference = (type, value) => {
-        setPreferences(prev => {
-            const current = prev[type] || []
-            const updated = current.includes(value)
-                ? current.filter(v => v !== value)
-                : [...current, value]
-            return { ...prev, [type]: updated }
-        })
-    }
-
-    const handleSavePreferences = async () => {
-        setSavingPrefs(true)
+    const handlePreferencesComplete = async () => {
+        setShowPreferences(false)
         try {
-            await savePreferences(preferences)
-            setShowPreferences(false)
-        } catch (error) {
-            console.error('Failed to save preferences:', error)
-        } finally {
-            setSavingPrefs(false)
+            const savedPrefs = await getPreferences()
+            if (savedPrefs) setPreferences(savedPrefs)
+        } catch (e) {
+            console.error('Failed to reload preferences:', e)
         }
     }
 
@@ -367,6 +369,38 @@ export default function GetOutfit() {
     }
 
     const hasItems = wardrobeItems.length >= 1 || shopProducts.length >= 1
+
+    const fetchShopItems = async (query) => {
+        if (!query) return
+        setShopLoading(true)
+        setShopItems([])
+        setShopQuery(query)
+
+        try {
+            const { data, error } = await supabase.functions.invoke('search-products', {
+                body: {
+                    query: query,
+                    filters: {
+                        limit: 10,
+                        min_price: priceRange[0],
+                        max_price: priceRange[1],
+                        country: 'us'
+                    },
+                    userPreferences: preferences
+                }
+            })
+
+            if (error) throw error
+
+            if (data?.products) {
+                setShopItems(data.products)
+            }
+        } catch (error) {
+            console.error('Shop fetch error:', error)
+        } finally {
+            setShopLoading(false)
+        }
+    }
 
     if (loading) {
         return (
@@ -882,193 +916,16 @@ export default function GetOutfit() {
 
 
 
-            {/* Preferences Modal */}
+            {/* Preferences Flow */}
             <AnimatePresence>
                 {showPreferences && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        style={{
-                            position: 'fixed',
-                            inset: 0,
-                            background: 'rgba(0,0,0,0.5)',
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            justifyContent: 'center',
-                            zIndex: 1000,
-                            padding: '1rem',
-                            overflowY: 'auto',
-                            paddingTop: '2rem',
-                            paddingBottom: '6rem'
-                        }}
-                        onClick={() => setShowPreferences(false)}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            exit={{ scale: 0.95, y: 20 }}
-                            className="card"
-                            style={{ maxWidth: '400px', width: '100%', padding: '1.25rem' }}
-                            onClick={e => e.stopPropagation()}
-                        >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                                <h3 style={{ fontSize: '1.125rem', margin: 0 }}>
-                                    <Heart size={18} style={{ color: 'hsl(var(--accent))', marginRight: '0.375rem' }} />
-                                    Style Preferences
-                                </h3>
-                                <button className="btn btn-icon btn-ghost btn-sm" onClick={() => setShowPreferences(false)}>
-                                    <X size={18} />
-                                </button>
-                            </div>
-
-                            {/* Thrift Preference */}
-                            <div style={{ marginBottom: '1rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Source Preference</label>
-                                <div style={{ display: 'flex', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-md)', padding: '3px' }}>
-                                    {['new', 'both', 'thrifted'].map(opt => (
-                                        <button
-                                            key={opt}
-                                            className={`btn btn-sm ${preferences.thriftPreference === opt ? 'btn-white shadow-sm' : 'btn-ghost'}`}
-                                            onClick={() => setPreferences(prev => ({ ...prev, thriftPreference: opt }))}
-                                            style={{
-                                                flex: 1,
-                                                textTransform: 'capitalize',
-                                                fontSize: '0.75rem',
-                                                height: '28px',
-                                                color: preferences.thriftPreference === opt ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))'
-                                            }}
-                                        >
-                                            {opt}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Preferred Styles */}
-                            <div style={{ marginBottom: '1rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Preferred Styles
-                                </label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '80px', overflowY: 'auto' }}>
-                                    {EXISTING_CATEGORY4.slice(0, 15).map(style => (
-                                        <button
-                                            key={style}
-                                            type="button"
-                                            className={`chip chip-outline ${preferences.preferredStyles?.includes(style) ? 'active' : ''}`}
-                                            onClick={() => togglePreference('preferredStyles', style)}
-                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                                        >
-                                            {style}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Fit Type */}
-                            <div style={{ marginBottom: '1rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Fit Type
-                                </label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                    {['Slim', 'Regular', 'Relaxed', 'Oversized', 'Loose', 'Athletic'].map(type => (
-                                        <button
-                                            key={type}
-                                            type="button"
-                                            className={`chip chip-outline ${preferences.fitType?.includes(type) ? 'active' : ''}`}
-                                            onClick={() => togglePreference('fitType', type)}
-                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                                        >
-                                            {type}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Sizes */}
-                            <div style={{ marginBottom: '1rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Sizes</label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                    {['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'].map(size => (
-                                        <button
-                                            key={size}
-                                            type="button"
-                                            className={`chip chip-outline ${preferences.sizes?.includes(size) ? 'active' : ''}`}
-                                            onClick={() => togglePreference('sizes', size)}
-                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px', minWidth: '32px', justifyContent: 'center' }}
-                                        >
-                                            {size}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Preferred Colors */}
-                            <div style={{ marginBottom: '1rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
-                                    Preferred Colors
-                                </label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                    {EXISTING_COLORS.slice(0, 12).map(color => (
-                                        <button
-                                            key={color}
-                                            type="button"
-                                            className={`chip chip-outline ${preferences.preferredColors?.includes(color) ? 'active' : ''}`}
-                                            onClick={() => togglePreference('preferredColors', color)}
-                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                                        >
-                                            {color}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Materials */}
-                            <div style={{ marginBottom: '1rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>Preferred Materials</label>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                    {['Cotton', 'Polyester', 'Silk', 'Denim', 'Wool', 'Linen', 'Leather', 'Velvet', 'Satin', 'Rayon', 'Nylon'].map(mat => (
-                                        <button
-                                            key={mat}
-                                            type="button"
-                                            className={`chip chip-outline ${preferences.materials?.includes(mat) ? 'active' : ''}`}
-                                            onClick={() => togglePreference('materials', mat)}
-                                            style={{ fontSize: '0.625rem', padding: '0.25rem 0.5rem', minHeight: '26px' }}
-                                        >
-                                            {mat}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Budget Slider */}
-                            <div style={{ marginBottom: '1.25rem' }}>
-                                <label className="label" style={{ fontSize: '0.75rem', marginBottom: '0.5rem' }}>
-                                    Budget Range
-                                </label>
-                                <DualRangeSlider
-                                    min={0}
-                                    max={20000}
-                                    step={500}
-                                    value={Array.isArray(preferences.budget) ? preferences.budget : [500, 5000]}
-                                    onChange={(newBudget) => setPreferences(prev => ({
-                                        ...prev,
-                                        budget: newBudget
-                                    }))}
-                                />
-                            </div>
-
-                            <button
-                                className="btn btn-primary w-full"
-                                onClick={handleSavePreferences}
-                                disabled={savingPrefs}
-                            >
-                                {savingPrefs ? <SpinnerGap size={16} className="animate-spin" /> : <Check size={16} />}
-                                Save Preferences
-                            </button>
-
-                        </motion.div>
-                    </motion.div>
+                    <PreferencesFlow
+                        isOpen={showPreferences}
+                        onClose={() => setShowPreferences(false)}
+                        onComplete={handlePreferencesComplete}
+                        existingPreferences={preferences}
+                        mode="edit"
+                    />
                 )}
             </AnimatePresence>
 
