@@ -1,6 +1,6 @@
 import { NavLink, Link } from 'react-router-dom'
 import { useState } from 'react'
-import { Sparkles, Home, Shirt, Wand2, ShoppingBag, User } from 'lucide-react'
+import { Sparkles, Home, Shirt, Wand2, User } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Navbar() {
@@ -41,13 +41,7 @@ export default function Navbar() {
                         <Wand2 size={20} />
                         <span>Outfit</span>
                     </NavLink>
-                    <NavLink
-                        to="/shop"
-                        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                    >
-                        <ShoppingBag size={20} />
-                        <span>Shop</span>
-                    </NavLink>
+
                     <NavLink
                         to="/profile"
                         className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}

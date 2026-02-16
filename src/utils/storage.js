@@ -146,93 +146,7 @@ export async function getWardrobeItems() {
     }
 }
 
-export async function getProducts(filters = {}) {
-    try {
-        const params = { select: '*' }
 
-        // Build filters as URL params is tricky for mixed AND/OR logic, 
-        // but basics work. Complex filters need PostgREST syntax.
-        // We'll reimplement the URL construction logic here.
-
-        let queryString = 'select=*'
-
-        if (filters.platforms && filters.platforms.length > 0) {
-            queryString += `&platform=in.(${filters.platforms.join(',')})`
-        }
-        if (filters.priceRange) {
-            queryString += `&price=gte.${filters.priceRange[0]}&price=lte.${filters.priceRange[1]}`
-        }
-        if (filters.thriftFilter === 'new') {
-            queryString += `&is_thrifted=eq.false`
-        } else if (filters.thriftFilter === 'thrifted') {
-            queryString += `&is_thrifted=eq.true`
-        }
-        if (filters.sortBy === 'price-low') {
-            queryString += `&order=price.asc`
-        } else if (filters.sortBy === 'price-high') {
-            queryString += `&order=price.desc`
-        } else if (filters.sortBy === 'rating') {
-            queryString += `&order=rating.desc`
-        }
-
-        const data = await supabaseFetch('products', { query: queryString, skipAuth: true })
-
-        let results = data.map(p => ({
-            id: p.id,
-            name: p.name,
-            brand: p.brand,
-            price: p.price,
-            originalPrice: p.original_price,
-            rating: p.rating,
-            reviews: p.reviews,
-            platform: p.platform,
-            image: p.image_url,
-            image_url: p.image_url,
-            product_url: p.product_url,
-            category: p.category,
-            color: p.color || '',
-            style: p.style || '',
-            styles: p.styles || [],
-            gender: p.gender || '',
-            fit_type: p.fit_type || '',
-            sizes: p.sizes || [],
-            material: p.material || '',
-            isThrifted: p.is_thrifted
-        }))
-
-        // Client-side filtering
-        if (filters.query) {
-            const q = filters.query.toLowerCase()
-            results = results.filter(p =>
-                p.name.toLowerCase().includes(q) ||
-                (p.brand || '').toLowerCase().includes(q)
-            )
-        }
-        if (filters.brands && filters.brands.length > 0) {
-            results = results.filter(p => filters.brands.includes(p.brand))
-        }
-        if (filters.styles && filters.styles.length > 0) {
-            results = results.filter(p => p.styles.some(s => filters.styles.includes(s)))
-        }
-        if (filters.colors && filters.colors.length > 0) {
-            results = results.filter(p => filters.colors.includes(p.color))
-        }
-        if (filters.categories && filters.categories.length > 0) {
-            results = results.filter(p => filters.categories.includes(p.category))
-        }
-        if (filters.materials && filters.materials.length > 0) {
-            results = results.filter(p => {
-                const text = (p.name + ' ' + (p.description || '')).toLowerCase()
-                return filters.materials.some(m => text.includes(m.toLowerCase()))
-            })
-        }
-
-        return results
-    } catch (error) {
-        console.error('Error fetching products:', error)
-        throw new Error('Failed to load products')
-    }
-}
 
 export async function saveWardrobeItem(item) {
     try {
@@ -341,6 +255,16 @@ export async function savePreferences(prefs) {
             updated_at: new Date().toISOString()
         }
 
+        // Include new profile fields if provided
+        if (prefs.name !== undefined) dbPrefs.name = prefs.name
+        if (prefs.username !== undefined) dbPrefs.username = prefs.username
+        if (prefs.bio !== undefined) dbPrefs.bio = prefs.bio
+        if (prefs.skinColor !== undefined) dbPrefs.skin_color = prefs.skinColor
+        if (prefs.hairColor !== undefined) dbPrefs.hair_color = prefs.hairColor
+        if (prefs.age !== undefined) dbPrefs.age = prefs.age
+        if (prefs.selfieUrl !== undefined) dbPrefs.selfie_url = prefs.selfieUrl
+        if (prefs.avatarUrl !== undefined) dbPrefs.avatar_url = prefs.avatarUrl
+
         await supabaseFetch('user_profiles', {
             method: 'POST',
             headers: { 'Prefer': 'resolution=merge-duplicates' },
@@ -384,7 +308,16 @@ export async function getPreferences() {
                 preferredStyles: profile.preferred_styles || [],
                 materials: profile.materials || [],
                 bodyType: profile.body_type || '',
-                gender: profile.gender || ''
+                gender: profile.gender || '',
+                // New profile fields
+                name: profile.name || '',
+                username: profile.username || '',
+                bio: profile.bio || '',
+                skinColor: profile.skin_color || '',
+                hairColor: profile.hair_color || '',
+                age: profile.age || '',
+                selfieUrl: profile.selfie_url || '',
+                avatarUrl: profile.avatar_url || ''
             }
         } catch (e) {
             return getDefaultPreferences()
@@ -545,17 +478,20 @@ export async function saveRecentOutfit(outfit, preferences = null) {
         const user = session?.user
         if (!user) return null
 
+        const body = {
+            user_id: user.id,
+            mood: outfit.mood,
+            items: outfit.items,
+            description: outfit.description || '',
+            preferences: preferences,
+            reason: outfit.reason || '',
+            is_public: false
+        }
+        if (outfit.missing_items) body.missing_items = outfit.missing_items
+
         const data = await supabaseFetch('recent_outfits', {
             method: 'POST',
-            body: {
-                user_id: user.id,
-                mood: outfit.mood,
-                items: outfit.items,
-                description: outfit.description || '',
-                preferences: preferences,
-                reason: outfit.reason || '',
-                is_public: false
-            }
+            body
         })
         return Array.isArray(data) ? data[0] : data
     } catch (error) {
@@ -683,15 +619,24 @@ export async function getOutfitHistory() {
 
 export async function getPublicOutfits(limit = 10, offset = 0) {
     try {
-        // Query recent_outfits where is_public=true (source of truth for public outfits)
+        // Query recent_outfits joined with user_profiles for owner info
         const data = await supabaseFetch('recent_outfits', {
-            query: `is_public=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
+            query: `select=*,user_profiles!recent_outfits_user_id_fkey(name,username,avatar_url,selfie_url)&is_public=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
             skipAuth: true
         })
         return data || []
     } catch (error) {
         console.error('Error fetching public outfits:', error)
-        return []
+        // Fallback without join if FK doesn't exist yet
+        try {
+            const data = await supabaseFetch('recent_outfits', {
+                query: `is_public=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
+                skipAuth: true
+            })
+            return data || []
+        } catch (e) {
+            return []
+        }
     }
 }
 
@@ -707,60 +652,4 @@ export async function deleteOutfit(outfitId) {
     }
 }
 
-// ============================================
-// PURCHASE REQUESTS
-// ============================================
 
-export async function sendPurchaseRequest(itemId, sellerId, offerPrice, message = '') {
-    try {
-        const session = await getAuthSession()
-        const user = session?.user
-        if (!user) throw new Error('Must be logged in')
-
-        const data = await supabaseFetch('purchase_requests', {
-            method: 'POST',
-            body: {
-                item_id: itemId,
-                seller_id: sellerId,
-                buyer_id: user.id,
-                offer_price: offerPrice,
-                message: message
-            }
-        })
-        return Array.isArray(data) ? data[0] : data
-    } catch (error) {
-        throw new Error('Failed to send offer')
-    }
-}
-
-export async function getPurchaseRequests() {
-    try {
-        const session = await getAuthSession()
-        const user = session?.user
-        if (!user) return []
-
-        // OR syntax: or=(seller_id.eq.UID,buyer_id.eq.UID)
-        const data = await supabaseFetch('purchase_requests', {
-            query: `or=(seller_id.eq.${user.id},buyer_id.eq.${user.id})&order=created_at.desc`
-        })
-        return data || []
-    } catch (error) {
-        return []
-    }
-}
-
-export async function updatePurchaseRequest(requestId, status, qilinLink = null) {
-    try {
-        const updateData = { status, updated_at: new Date().toISOString() }
-        if (qilinLink) updateData.qilin_link = qilinLink
-
-        const data = await supabaseFetch('purchase_requests', {
-            method: 'PATCH',
-            body: updateData,
-            query: `id=eq.${requestId}`
-        })
-        return Array.isArray(data) ? data[0] : data
-    } catch (error) {
-        throw new Error('Failed to update request')
-    }
-}

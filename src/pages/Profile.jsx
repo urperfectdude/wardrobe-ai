@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { User, PencilSimple, Heart, SignOut, SpinnerGap, TShirt, ShoppingBag } from '@phosphor-icons/react'
+import { User, PencilSimple, Heart, SignOut, SpinnerGap, TShirt } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getPreferences, getPurchaseRequests, updatePurchaseRequest, getSavedOutfits, getRecentOutfits } from '../utils/storage'
+import { getPreferences, getSavedOutfits, getRecentOutfits } from '../utils/storage'
 import OnboardingFlow from '../components/OnboardingFlow'
 import PreferencesFlow from '../components/PreferencesFlow'
 import PublicOutfitModal from '../components/PublicOutfitModal'
@@ -13,10 +13,6 @@ export default function Profile() {
     const { user, userProfile, loading: authLoading, signOut, refreshProfile } = useAuth()
     const [showOnboarding, setShowOnboarding] = useState(false)
     const [showPreferencesFlow, setShowPreferencesFlow] = useState(false)
-    const [requests, setRequests] = useState([])
-    const [savedOutfits, setSavedOutfits] = useState([])
-    const [recentOutfits, setRecentOutfits] = useState([])
-    const [loadingRequests, setLoadingRequests] = useState(true)
     const [activeTab, setActiveTab] = useState('outfits')
     const [selectedOutfit, setSelectedOutfit] = useState(null)
 
@@ -35,7 +31,6 @@ export default function Profile() {
     // Load preferences and other data once on mount
     useEffect(() => {
         loadPreferences()
-        loadRequests()
         loadSavedOutfits()
         loadRecentOutfits()
     }, [])
@@ -60,17 +55,7 @@ export default function Profile() {
         }
     }
 
-    const loadRequests = async () => {
-        setLoadingRequests(true)
-        try {
-            const data = await getPurchaseRequests()
-            setRequests(data)
-        } catch (error) {
-            console.error('Error loading requests:', error)
-        } finally {
-            setLoadingRequests(false)
-        }
-    }
+
 
     const loadPreferences = async () => {
         try {
@@ -96,18 +81,10 @@ export default function Profile() {
         await refreshProfile() // refresh userProfile so name updates immediately
     }
 
-    const handleUpdateRequestStatus = async (requestId, status) => {
-        const qilinLink = status === 'accepted' ? 'https://qilin.in/sell' : null
-        try {
-            await updatePurchaseRequest(requestId, status, qilinLink)
-            loadRequests()
-        } catch (error) {
-            console.error('Failed to update request:', error)
-        }
-    }
+
 
     const displayName = userProfile?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
-    const avatarUrl = userProfile?.avatar_url || user?.user_metadata?.avatar_url
+    const avatarUrl = userProfile?.selfie_url || userProfile?.avatar_url || user?.user_metadata?.avatar_url
     const initial = displayName?.[0]?.toUpperCase() || 'U'
 
     if (authLoading) {
@@ -291,13 +268,36 @@ export default function Profile() {
                         </div>
                     )}
 
-                    {preferences.thriftPreference && preferences.thriftPreference !== 'both' && (
+                    {/* Appearance Details */}
+                    {(preferences.skinColor || preferences.hairColor || preferences.age) && (
                         <div>
-                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Shopping</span>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Appearance</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
+                                {preferences.skinColor && (
+                                    <span className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        🎨 Skin: {preferences.skinColor}
+                                    </span>
+                                )}
+                                {preferences.hairColor && (
+                                    <span className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        💇 Hair: {preferences.hairColor}
+                                    </span>
+                                )}
+                                {preferences.age && (
+                                    <span className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>
+                                        Age: {preferences.age}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Username / Bio */}
+                    {preferences.username && (
+                        <div>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Username</span>
                             <div style={{ marginTop: '0.25rem' }}>
-                                <span className="chip" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default', textTransform: 'capitalize' }}>
-                                    {preferences.thriftPreference}
-                                </span>
+                                <span className="chip chip-outline active" style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '24px', cursor: 'default' }}>@{preferences.username}</span>
                             </div>
                         </div>
                     )}
@@ -510,107 +510,7 @@ export default function Profile() {
                 </motion.div>
             )}
 
-            {/* Purchase Requests Section */}
-            {(activeTab === 'selling' || activeTab === 'buying') && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    style={{
-                        background: 'hsl(var(--card))',
-                        borderRadius: 'var(--radius-xl)',
-                        padding: '1.25rem',
-                        marginBottom: '1rem',
-                        border: '1px solid hsl(var(--border))'
-                    }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <h3 style={{ fontSize: '0.9375rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                            <ShoppingBag size={16} style={{ color: 'hsl(var(--accent))' }} />
-                            Marketplace Offers
-                        </h3>
-                    </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                        {loadingRequests ? (
-                            <div style={{ padding: '2rem', textAlign: 'center' }}>
-                                <SpinnerGap size={24} className="animate-spin" style={{ color: 'hsl(var(--muted-foreground))' }} />
-                            </div>
-                        ) : (
-                            requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).length === 0 ? (
-                                <p style={{ textAlign: 'center', color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem', padding: '1.5rem 0' }}>
-                                    No {activeTab} offers yet
-                                </p>
-                            ) : (
-                                requests.filter(r => activeTab === 'selling' ? r.seller_id === user.id : r.buyer_id === user.id).map(request => (
-                                    <div key={request.id} style={{
-                                        padding: '0.75rem',
-                                        background: 'white',
-                                        borderRadius: 'var(--radius-lg)',
-                                        border: '1px solid hsl(var(--border))'
-                                    }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                <div style={{ fontSize: '0.8125rem', fontWeight: 700 }}>₹{request.offer_price}</div>
-                                                <span style={{
-                                                    fontSize: '0.5rem', fontWeight: 700, padding: '2px 4px', borderRadius: '4px',
-                                                    background: request.status === 'pending' ? 'hsl(var(--secondary))' :
-                                                        request.status === 'accepted' ? 'hsl(var(--green-100))' : 'hsl(var(--destructive) / 0.1)',
-                                                    color: request.status === 'accepted' ? 'hsl(var(--green-600))' :
-                                                        request.status === 'declined' ? 'hsl(var(--destructive))' : 'hsl(var(--muted-foreground))',
-                                                    textTransform: 'uppercase'
-                                                }}>
-                                                    {request.status}
-                                                </span>
-                                            </div>
-                                            <span style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))' }}>
-                                                {new Date(request.created_at).toLocaleDateString()}
-                                            </span>
-                                        </div>
-
-                                        {request.message && (
-                                            <p style={{ fontSize: '0.75rem', margin: '0 0 0.75rem', color: 'hsl(var(--foreground))', fontStyle: 'italic' }}>
-                                                "{request.message}"
-                                            </p>
-                                        )}
-
-                                        {activeTab === 'selling' && request.status === 'pending' && (
-                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                <button
-                                                    className="btn btn-primary btn-sm"
-                                                    style={{ flex: 1, fontSize: '0.6875rem', minHeight: '32px' }}
-                                                    onClick={() => handleUpdateRequestStatus(request.id, 'accepted')}
-                                                >
-                                                    Accept & Sell
-                                                </button>
-                                                <button
-                                                    className="btn btn-outline btn-sm"
-                                                    style={{ flex: 1, fontSize: '0.6875rem', minHeight: '32px' }}
-                                                    onClick={() => handleUpdateRequestStatus(request.id, 'declined')}
-                                                >
-                                                    Decline
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {activeTab === 'buying' && request.status === 'accepted' && (
-                                            <a
-                                                href={request.qilin_link || 'https://qilin.in'}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="btn btn-primary btn-sm w-full"
-                                                style={{ fontSize: '0.6875rem', minHeight: '32px' }}
-                                            >
-                                                Complete Purchase on Qilin.in
-                                            </a>
-                                        )}
-                                    </div>
-                                ))
-                            )
-                        )}
-                    </div>
-                </motion.div>
-            )}
 
             {/* Sign Out */}
             <motion.button

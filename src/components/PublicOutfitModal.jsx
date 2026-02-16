@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ExternalLink, ShoppingBag, Shirt, Heart } from 'lucide-react'
-import MakeOfferModal from './MakeOfferModal'
+import { X, ExternalLink, Shirt, Heart } from 'lucide-react'
 
 export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
-    const [selectedItem, setSelectedItem] = useState(null)
-    const [showOfferModal, setShowOfferModal] = useState(false)
+
 
     if (!isOpen || !outfit) return null
 
@@ -133,12 +131,7 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                                 transition: 'opacity 0.2s',
                             }}
                                 onClick={() => {
-                                    if (item.source === 'shop' && item.url) {
-                                        window.open(item.url, '_blank', 'noopener,noreferrer');
-                                    } else {
-                                        setSelectedItem(item);
-                                        setShowOfferModal(true);
-                                    }
+                                    // No action on click for now
                                 }}>
                                 <div style={{ position: 'relative', width: '100px', height: '100px', flexShrink: 0 }}>
                                     <img
@@ -184,68 +177,15 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                                         {item.title || item.name}
                                     </h3>
 
-                                    {item.source === 'shop' ? (
-                                        <button
-                                            className="btn btn-primary btn-sm"
-                                            style={{ width: 'fit-content', fontSize: '0.75rem', minHeight: '32px' }}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                window.open(item.url || '#', '_blank', 'noopener,noreferrer');
-                                            }}
-                                        >
-                                            <ShoppingBag size={14} />
-                                            Buy Now
-                                        </button>
-                                    ) : (
-                                        <button
-                                            className="btn btn-outline btn-sm"
-                                            style={{ width: 'fit-content', fontSize: '0.75rem', minHeight: '32px' }}
-                                            onClick={() => {
-                                                setSelectedItem(item);
-                                                setShowOfferModal(true);
-                                            }}
-                                        >
-                                            <IndianRupeeIcon size={14} />
-                                            Make Offer
-                                        </button>
-                                    )}
+
                                 </div>
                             </div>
                         ))}
                     </div>
                 </motion.div>
             </div>
-
-            {/* Make Offer Modal */}
-            {selectedItem && (
-                <MakeOfferModal
-                    isOpen={showOfferModal}
-                    onClose={() => setShowOfferModal(false)}
-                    item={selectedItem}
-                    sellerId={outfit.user_id}
-                />
-            )}
         </>
     )
 }
 
-function IndianRupeeIcon({ size }) {
-    return (
-        <svg
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        >
-            <path d="M6 3h12" />
-            <path d="M6 8h12" />
-            <path d="m6 13 8.5 8" />
-            <path d="M6 13h3" />
-            <path d="M9 13c6.667 0 6.667-10 0-10" />
-        </svg>
-    )
-}
+

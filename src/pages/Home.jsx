@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Sparkle, TShirt, MagicWand, ShoppingBag, ArrowRight, UploadSimple, Lightning, Storefront, Heart } from '@phosphor-icons/react'
+import { Sparkle, TShirt, MagicWand, ArrowRight, Heart } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getPublicOutfits } from '../utils/storage'
 import { useAuth } from '../contexts/AuthContext'
@@ -48,23 +48,7 @@ export default function Home() {
         fetchOutfits(offset + LIMIT)
     }
 
-    const features = [
-        {
-            icon: UploadSimple,
-            title: 'Upload Clothes',
-            description: 'Snap photos of your clothes and build your digital wardrobe.'
-        },
-        {
-            icon: Lightning,
-            title: 'AI Styling',
-            description: 'Get outfit suggestions based on occasion and color theory.'
-        },
-        {
-            icon: Storefront,
-            title: 'Shop Smart',
-            description: 'Find pieces from Myntra, Ajio, Amazon & more.'
-        }
-    ]
+
 
     const moods = [
         { id: 'party', label: 'Party', image: '/moods/party.png' },
@@ -263,55 +247,7 @@ export default function Home() {
 
 
 
-            {/* How It Works */}
-            <section style={{ padding: '1rem 0' }}>
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.4, delay: 0.3 }}
-                >
-                    <h2 style={{ fontSize: '1rem', marginBottom: '0.75rem', fontWeight: 600 }}>
-                        How It Works
-                    </h2>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        {features.map((feature, idx) => (
-                            <motion.div
-                                key={feature.title}
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ duration: 0.3, delay: 0.35 + idx * 0.05 }}
-                                className="card"
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.75rem',
-                                    padding: '0.75rem'
-                                }}
-                            >
-                                <div style={{
-                                    width: '2.25rem',
-                                    height: '2.25rem',
-                                    background: 'hsl(var(--primary))',
-                                    borderRadius: 'var(--radius-md)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'white',
-                                    flexShrink: 0
-                                }}>
-                                    <feature.icon size={16} />
-                                </div>
-                                <div>
-                                    <h3 style={{ fontSize: '0.8125rem', marginBottom: '0.125rem' }}>{feature.title}</h3>
-                                    <p style={{ fontSize: '0.75rem', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
-                                        {feature.description}
-                                    </p>
-                                </div>
-                            </motion.div>
-                        ))}
-                    </div>
-                </motion.div>
-            </section>
+
 
 
             {/* Public Outfits Feed */}
@@ -322,7 +258,9 @@ export default function Home() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {publicOutfits.map((outfit) => (
+                        {publicOutfits.map((outfit) => {
+                            const owner = outfit.user_profiles
+                            return (
                             <motion.div
                                 key={outfit.id}
                                 initial={{ opacity: 0, y: 20 }}
@@ -340,6 +278,26 @@ export default function Home() {
                                 }}
                                 whileHover={{ scale: 1.01, boxShadow: 'var(--shadow-md)' }}
                             >
+                                {/* Owner Header */}
+                                {owner && (
+                                    <div
+                                        onClick={(e) => { e.stopPropagation(); if (owner.username) window.location.href = `/user/${owner.username}` }}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.625rem', cursor: owner.username ? 'pointer' : 'default' }}
+                                    >
+                                        {(owner.selfie_url || owner.avatar_url) ? (
+                                            <img src={owner.selfie_url || owner.avatar_url} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'hsl(var(--muted))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}>
+                                                {(owner.name || '?')[0].toUpperCase()}
+                                            </div>
+                                        )}
+                                        <div>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{owner.name || 'Stylist'}</span>
+                                            {owner.username && <span style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))', marginLeft: '0.375rem' }}>@{owner.username}</span>}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Horizontal Items Strip with Fade & CTA - No Header */}
                                 <div style={{ position: 'relative', height: '120px' }}>
                                     <div style={{
@@ -347,8 +305,8 @@ export default function Home() {
                                         gap: '0.5rem',
                                         overflowX: 'auto',
                                         height: '100%',
-                                        scrollbarWidth: 'none', // Hide scrollbar
-                                        paddingRight: '140px' // Increased space for fade/button
+                                        scrollbarWidth: 'none',
+                                        paddingRight: '140px'
                                     }}>
                                         {outfit.items.map((item, i) => (
                                             <div key={i} style={{
@@ -375,7 +333,7 @@ export default function Home() {
                                         top: 0,
                                         right: 0,
                                         bottom: 0,
-                                        width: '240px', // Wider fade
+                                        width: '240px',
                                         background: 'linear-gradient(to right, transparent, hsl(var(--card)) 40%)',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -392,7 +350,8 @@ export default function Home() {
                                     </div>
                                 </div>
                             </motion.div>
-                        ))}
+                            )
+                        })}
                     </div>
 
                     {hasMore && (

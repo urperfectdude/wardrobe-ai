@@ -1,15 +1,16 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { MagicWand, Shuffle, ShoppingBag, Sparkle, ArrowRight, X, Heart, Check, ArrowSquareOut, SpinnerGap, TShirt, Gear, PencilSimple, CaretDown, CaretUp, ClockCounterClockwise, BookmarkSimple } from '@phosphor-icons/react'
+import { MagicWand, Shuffle, Sparkle, ArrowRight, X, Heart, Check, ArrowSquareOut, SpinnerGap, TShirt, Gear, PencilSimple, CaretDown, CaretUp, ClockCounterClockwise, BookmarkSimple } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getWardrobeItems, getProducts, savePreferences, getPreferences, saveOutfit, markOutfitAsSaved, getRecentOutfits, getSavedOutfits, saveRecentOutfit, saveRecentToSaved } from '../utils/storage'
+import { getWardrobeItems, savePreferences, getPreferences, saveOutfit, markOutfitAsSaved, getRecentOutfits, getSavedOutfits, saveRecentOutfit, saveRecentToSaved } from '../utils/storage'
 import { generateOutfit, OCCASION_CATEGORIES, scoreProductMatch } from '../utils/outfitMatcher'
 import { EXISTING_CATEGORY4, EXISTING_COLORS, generateOutfitDescription } from '../utils/openaiAnalysis'
+import { analyzeGaps } from '../utils/gapAnalysis'
 import { useAuth } from '../contexts/AuthContext'
 import OnboardingFlow from '../components/OnboardingFlow'
 import PreferencesFlow from '../components/PreferencesFlow'
 import ParameterSelector from '../components/ParameterSelector'
-import ShopSuggestions from '../components/ShopSuggestions'
+
 import { supabase } from '../lib/supabase'
 
 const MOODS = [
@@ -117,7 +118,6 @@ export default function GetOutfit() {
     const showPreferencesFromUrl = searchParams.get('preferences') === 'true'
 
     const [wardrobeItems, setWardrobeItems] = useState([])
-    const [shopProducts, setShopProducts] = useState([])
     const [loading, setLoading] = useState(true)
     const [selectedMood, setSelectedMood] = useState(moodFromUrl || 'party')
     const [outfit, setOutfit] = useState(null)
@@ -127,8 +127,8 @@ export default function GetOutfit() {
     const [activeOutfitId, setActiveOutfitId] = useState(null)
     const [showPreferences, setShowPreferences] = useState(showPreferencesFromUrl)
 
-    // Source toggle: 'closet' or 'shop' or 'both'
-    const [source, setSource] = useState('both')
+    // Source fixed to 'closet'
+    const source = 'closet'
 
     // Tab for Saved/Recent toggle
     const [activeTab, setActiveTab] = useState('saved')
@@ -147,28 +147,23 @@ export default function GetOutfit() {
     const [savedOutfits, setSavedOutfits] = useState([])
     const [isPublic, setIsPublic] = useState(false)
     const [isSavingOutfit, setIsSavingOutfit] = useState(false)
+    const [missingItems, setMissingItems] = useState([])
 
-    // Shop State
-    const [shopItems, setShopItems] = useState([])
-    const [shopLoading, setShopLoading] = useState(false)
-    const [shopQuery, setShopQuery] = useState('')
-    const [priceRange, setPriceRange] = useState([20, 500])
+
 
     const { user } = useAuth()
 
-    // Load wardrobe items and shop products
+    // Load wardrobe items
     useEffect(() => {
         async function loadData() {
             try {
-                const [items, products, savedPrefs, recent, saved] = await Promise.all([
+                const [items, savedPrefs, recent, saved] = await Promise.all([
                     getWardrobeItems().catch(() => []),
-                    getProducts().catch(() => []),
                     getPreferences().catch(() => null),
                     getRecentOutfits().catch(() => []),
                     getSavedOutfits().catch(() => [])
                 ])
                 setWardrobeItems(items)
-                setShopProducts(products)
                 setRecentOutfits(recent)
                 setSavedOutfits(saved)
 
@@ -203,13 +198,13 @@ export default function GetOutfit() {
 
     // Auto-generate outfit when mood is passed via URL
     useEffect(() => {
-        if (moodFromUrl && !loading && (wardrobeItems.length >= 1 || shopProducts.length >= 1)) {
+        if (moodFromUrl && !loading && wardrobeItems.length >= 1) {
             setSelectedMood(moodFromUrl)
             setTimeout(() => {
                 generateOutfitWithProducts(moodFromUrl)
             }, 300)
         }
-    }, [moodFromUrl, loading, wardrobeItems.length, shopProducts.length])
+    }, [moodFromUrl, loading, wardrobeItems.length])
 
     const generateOutfitWithProducts = useCallback((mood) => {
         setIsGenerating(true)
@@ -218,47 +213,13 @@ export default function GetOutfit() {
         setTimeout(async () => {
             let outfitItems = []
 
-            // Get items based on source toggle
-            if (source === 'closet' || source === 'both') {
-                const closetSuggestions = generateOutfit(wardrobeItems, mood, 1)
-                if (closetSuggestions[0]) {
-                    outfitItems = closetSuggestions[0].items.map(item => ({
-                        ...item,
-                        source: 'closet'
-                    }))
-                }
-            }
-
-            if (source === 'shop' || source === 'both') {
-                // Score each product against user preferences
-                const scoredProducts = shopProducts.map(product => ({
-                    ...product,
-                    prefScore: scoreProductMatch(product, preferences)
+            // Get items from closet
+            const closetSuggestions = generateOutfit(wardrobeItems, mood, 1)
+            if (closetSuggestions[0]) {
+                outfitItems = closetSuggestions[0].items.map(item => ({
+                    ...item,
+                    source: 'closet'
                 }))
-
-                // Also factor in occasion matching
-                const occasionInfo = OCCASION_CATEGORIES[mood]
-                if (occasionInfo) {
-                    scoredProducts.forEach(product => {
-                        const matchesStyle = occasionInfo.styles?.some(
-                            style => (product.category4 || product.style || '').toLowerCase().includes(style.toLowerCase())
-                        )
-                        if (matchesStyle) product.prefScore += 10
-                        const matchesColor = occasionInfo.colors?.includes('any') ||
-                            occasionInfo.colors?.some(c => (product.color || '').toLowerCase() === c)
-                        if (matchesColor) product.prefScore += 5
-                    })
-                }
-
-                // Sort by preference score (highest first), add small randomness for variety
-                scoredProducts.sort((a, b) => (b.prefScore - a.prefScore) + (Math.random() * 4 - 2))
-
-                const shopSuggestions = scoredProducts.slice(0, source === 'shop' ? 4 : 2).map(p => ({
-                    ...p,
-                    source: 'shop'
-                }))
-
-                outfitItems = [...outfitItems, ...shopSuggestions]
             }
 
             if (outfitItems.length > 0) {
@@ -289,14 +250,31 @@ export default function GetOutfit() {
                 } catch (err) {
                     console.error("Error auto-saving to recent_outfits:", err)
                 }
+                // Run AI Gap Analysis in background
+                try {
+                    const gaps = await analyzeGaps(wardrobeItems, outfitItems, mood)
+                    setMissingItems(gaps)
+
+                    // Save missing items to the outfit record
+                    if (saved && gaps.length > 0) {
+                        await supabase
+                            .from('recent_outfits')
+                            .update({ missing_items: gaps })
+                            .eq('id', saved.id)
+                    }
+                } catch (err) {
+                    console.error('Gap analysis error:', err)
+                }
+
             } else {
                 setOutfit(null)
                 setOutfitDescription('')
+                setMissingItems([])
             }
 
             setIsGenerating(false)
         }, 800)
-    }, [wardrobeItems, shopProducts, source, preferences])
+    }, [wardrobeItems, preferences])
 
 
     const [showOnboarding, setShowOnboarding] = useState(false)
@@ -368,39 +346,9 @@ export default function GetOutfit() {
         window.scrollTo({ top: 0, behavior: 'smooth' })
     }
 
-    const hasItems = wardrobeItems.length >= 1 || shopProducts.length >= 1
+    const hasItems = wardrobeItems.length >= 1
 
-    const fetchShopItems = async (query) => {
-        if (!query) return
-        setShopLoading(true)
-        setShopItems([])
-        setShopQuery(query)
 
-        try {
-            const { data, error } = await supabase.functions.invoke('search-products', {
-                body: {
-                    query: query,
-                    filters: {
-                        limit: 10,
-                        min_price: priceRange[0],
-                        max_price: priceRange[1],
-                        country: 'us'
-                    },
-                    userPreferences: preferences
-                }
-            })
-
-            if (error) throw error
-
-            if (data?.products) {
-                setShopItems(data.products)
-            }
-        } catch (error) {
-            console.error('Shop fetch error:', error)
-        } finally {
-            setShopLoading(false)
-        }
-    }
 
     if (loading) {
         return (
@@ -418,11 +366,17 @@ export default function GetOutfit() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                 <div>
                     <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>Get Your Outfit</h1>
-                    <p className="text-muted text-sm">AI styles you from wardrobe + shop</p>
+                    <p className="text-muted text-sm">AI styles you from your wardrobe</p>
                 </div>
                 <button
                     className="btn btn-ghost btn-sm"
-                    onClick={() => setShowPreferences(true)}
+                    onClick={() => {
+                        if (!user) {
+                            setShowOnboarding(true)
+                            return
+                        }
+                        setShowPreferences(true)
+                    }}
                     style={{ gap: '0.25rem', fontSize: '0.75rem' }}
                 >
                     <Gear size={16} />
@@ -430,46 +384,12 @@ export default function GetOutfit() {
                 </button>
             </div>
 
-            {/* Source Toggle */}
-            <div style={{
-                display: 'flex',
-                gap: '0.5rem',
-                marginBottom: '0.75rem',
-                background: 'hsl(var(--secondary))',
-                padding: '0.375rem',
-                borderRadius: 'var(--radius-lg)'
-            }}>
-                <button
-                    onClick={() => setSource('closet')}
-                    className={`btn btn-sm ${source === 'closet' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{ flex: 1, minHeight: '36px', fontSize: '0.75rem' }}
-                >
-                    <TShirt size={14} />
-                    My Closet
-                </button>
-                <button
-                    onClick={() => setSource('both')}
-                    className={`btn btn-sm ${source === 'both' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{ flex: 1, minHeight: '36px', fontSize: '0.75rem' }}
-                >
-                    <Sparkle size={14} />
-                    Both
-                </button>
-                <button
-                    onClick={() => setSource('shop')}
-                    className={`btn btn-sm ${source === 'shop' ? 'btn-primary' : 'btn-ghost'}`}
-                    style={{ flex: 1, minHeight: '36px', fontSize: '0.75rem' }}
-                >
-                    <ShoppingBag size={14} />
-                    Shop Only
-                </button>
-            </div>
+
 
 
 
             {/* Warning if not enough items */}
-            {/* Warning if no wardrobe items and source includes closet */}
-            {(source !== 'shop' && wardrobeItems.length === 0) && (
+            {wardrobeItems.length === 0 && (
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -485,14 +405,11 @@ export default function GetOutfit() {
                     <Sparkle size={28} style={{ color: 'hsl(var(--accent))', marginBottom: '0.75rem' }} />
                     <h3 style={{ marginBottom: '0.375rem', fontSize: '1rem' }}>No Items in Closet</h3>
                     <p className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>
-                        Add items to your closet or check the shop
+                        Add items to your closet to get started
                     </p>
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                         <Link to="/closet" className="btn btn-primary btn-sm">
                             Add Clothes
-                        </Link>
-                        <Link to="/shop" className="btn btn-outline btn-sm">
-                            Browse Shop
                         </Link>
                     </div>
                 </motion.div>
@@ -698,14 +615,11 @@ export default function GetOutfit() {
                                                 flexShrink: 0
                                             }}
                                         >
-                                            <a
-                                                href={item.source === 'shop' ? (item.url || item.product_url) : '#'}
-                                                target={item.source === 'shop' ? "_blank" : undefined}
-                                                rel="noopener noreferrer"
+                                            <div
                                                 onClick={(e) => {
-                                                    if (item.source !== 'shop') e.preventDefault()
+                                                    // e.preventDefault() // No longer needed as we're not using anchor tags for shop items
                                                 }}
-                                                style={{ display: 'block', position: 'relative', aspectRatio: '3/4', cursor: item.source === 'shop' ? 'pointer' : 'default' }}
+                                                style={{ display: 'block', position: 'relative', aspectRatio: '3/4', cursor: 'default' }}
                                             >
                                                 <img
                                                     src={item.image}
@@ -713,44 +627,23 @@ export default function GetOutfit() {
                                                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                                 />
                                                 {/* Badge */}
-                                                {item.source === 'shop' ? (
-                                                    <div style={{
-                                                        position: 'absolute',
-                                                        top: '0.5rem',
-                                                        left: '0.5rem',
-                                                        padding: '0.25rem 0.5rem',
-                                                        background: item.platform === 'Myntra' ? '#ff3f6c' :
-                                                            item.platform === 'Ajio' ? '#505050' :
-                                                                item.platform === 'Amazon' ? '#ff9900' :
-                                                                    'hsl(220 60% 50%)',
-                                                        color: 'white',
-                                                        fontSize: '0.5625rem',
-                                                        fontWeight: 700,
-                                                        borderRadius: 'var(--radius-sm)',
-                                                        textTransform: 'uppercase',
-                                                        letterSpacing: '0.05em'
-                                                    }}>
-                                                        {item.platform || 'Shop'}
-                                                    </div>
-                                                ) : (
-                                                    <div style={{
-                                                        position: 'absolute',
-                                                        top: '0.5rem',
-                                                        left: '0.5rem',
-                                                        padding: '0.25rem 0.5rem',
-                                                        background: 'hsl(142 71% 45%)',
-                                                        color: 'white',
-                                                        fontSize: '0.5625rem',
-                                                        fontWeight: 700,
-                                                        borderRadius: 'var(--radius-sm)',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '0.125rem'
-                                                    }}>
-                                                        <TShirt size={10} />
-                                                        My Closet
-                                                    </div>
-                                                )}
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '0.5rem',
+                                                    left: '0.5rem',
+                                                    padding: '0.25rem 0.5rem',
+                                                    background: 'hsl(142 71% 45%)',
+                                                    color: 'white',
+                                                    fontSize: '0.5625rem',
+                                                    fontWeight: 700,
+                                                    borderRadius: 'var(--radius-sm)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.125rem'
+                                                }}>
+                                                    <TShirt size={10} />
+                                                    My Closet
+                                                </div>
 
                                                 {/* Like Button */}
                                                 <button
@@ -779,7 +672,7 @@ export default function GetOutfit() {
                                                 >
                                                     <Check size={14} strokeWidth={3} />
                                                 </button>
-                                            </a>
+                                            </div>
 
                                             {/* Info Section */}
                                             <div style={{ padding: '0.625rem' }}>
@@ -796,71 +689,95 @@ export default function GetOutfit() {
                                                 </p>
 
                                                 {/* Price or Category */}
-                                                {item.source === 'shop' && item.price ? (
-                                                    <p style={{ fontSize: '0.75rem', fontWeight: 700, margin: 0, marginBottom: '0.5rem' }}>
-                                                        ₹{item.price.toLocaleString()}
-                                                    </p>
-                                                ) : (
-                                                    <>
-                                                        {(item.category3 || item.category4) && (
-                                                            <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-                                                                {item.category3 && (
-                                                                    <span style={{ fontSize: '0.5625rem', padding: '0.125rem 0.375rem', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-sm)', color: 'hsl(var(--muted-foreground))' }}>
-                                                                        {item.category3}
-                                                                    </span>
-                                                                )}
-                                                            </div>
+                                                {(item.category3 || item.category4) && (
+                                                    <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                                                        {item.category3 && (
+                                                            <span style={{ fontSize: '0.5625rem', padding: '0.125rem 0.375rem', background: 'hsl(var(--secondary))', borderRadius: 'var(--radius-sm)', color: 'hsl(var(--muted-foreground))' }}>
+                                                                {item.category3}
+                                                            </span>
                                                         )}
-                                                    </>
+                                                    </div>
                                                 )}
 
                                                 {/* Action Button */}
-                                                {item.source === 'shop' ? (
-                                                    <a
-                                                        href={item.url || '#'}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="btn btn-primary btn-sm w-full"
-                                                        style={{
-                                                            fontSize: '0.6875rem',
-                                                            minHeight: '32px',
-                                                            gap: '0.25rem'
-                                                        }}
+                                                <div style={{ display: 'flex', gap: '0.375rem' }}>
+                                                    <button
+                                                      className="btn btn-outline btn-sm"
+                                                      style={{
+                                                          padding: '0.375rem',
+                                                          minHeight: '32px',
+                                                          width: '100%'
+                                                      }}
+                                                      // Add functionality later or remove if edit is not needed here
                                                     >
-                                                        <ArrowSquareOut size={12} />
-                                                        Buy Now
-                                                    </a>
-                                                ) : (
-                                                    <div style={{ display: 'flex', gap: '0.375rem' }}>
-                                                        <a
-                                                            href="https://qilin.in"
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="btn btn-primary btn-sm"
-                                                            style={{
-                                                                flex: 1,
-                                                                fontSize: '0.6875rem',
-                                                                minHeight: '32px'
-                                                            }}
-                                                        >
-                                                            Sell it
-                                                        </a>
-                                                        <button
-                                                            className="btn btn-outline btn-sm"
-                                                            style={{
-                                                                padding: '0.375rem',
-                                                                minHeight: '32px'
-                                                            }}
-                                                        >
-                                                            <PencilSimple size={14} />
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                        <PencilSimple size={14} /> Edit Item
+                                                    </button>
+                                                </div>
                                             </div>
                                         </motion.div>
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Ghost Items — Missing Pieces */}
+                            {missingItems.length > 0 && (
+                                <div style={{ marginTop: '1rem', borderTop: '1px solid hsl(var(--border))', paddingTop: '0.75rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.625rem' }}>
+                                        <Sparkle size={14} style={{ color: 'hsl(var(--accent))' }} />
+                                        <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>Complete the look</span>
+                                        <span style={{ fontSize: '0.6875rem', color: 'hsl(var(--muted-foreground))' }}>{missingItems.length} missing</span>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
+                                        {missingItems.map((item, idx) => (
+                                            <a
+                                                key={idx}
+                                                href={item.searchUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{
+                                                    minWidth: '140px', width: '140px',
+                                                    border: '2px dashed hsl(var(--accent) / 0.4)',
+                                                    borderRadius: 'var(--radius-lg)',
+                                                    padding: '1rem 0.75rem',
+                                                    background: 'hsl(var(--accent) / 0.05)',
+                                                    display: 'flex', flexDirection: 'column',
+                                                    alignItems: 'center', justifyContent: 'center',
+                                                    gap: '0.5rem', textDecoration: 'none',
+                                                    flexShrink: 0, cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                <div style={{
+                                                    width: '36px', height: '36px', borderRadius: '50%',
+                                                    background: 'hsl(var(--accent) / 0.15)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                }}>
+                                                    <ArrowSquareOut size={16} style={{ color: 'hsl(var(--accent))' }} />
+                                                </div>
+                                                <span style={{
+                                                    fontSize: '0.6875rem', fontWeight: 600,
+                                                    color: 'hsl(var(--foreground))', textAlign: 'center',
+                                                    textTransform: 'capitalize'
+                                                }}>
+                                                    {item.term}
+                                                </span>
+                                                <span style={{
+                                                    fontSize: '0.5625rem',
+                                                    color: 'hsl(var(--muted-foreground))',
+                                                    textAlign: 'center', lineHeight: 1.3
+                                                }}>
+                                                    {item.description?.slice(0, 60)}...
+                                                </span>
+                                                <span style={{
+                                                    fontSize: '0.5rem', fontWeight: 700,
+                                                    color: 'hsl(var(--accent))',
+                                                    textTransform: 'uppercase', letterSpacing: '0.05em'
+                                                }}>Shop →</span>
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* AI Description Section */}
                             {outfitDescription && (
@@ -907,7 +824,7 @@ export default function GetOutfit() {
                         >
                             <MagicWand className="empty-state-icon" />
                             <h3>Select a mood</h3>
-                            <p className="text-sm">AI will style you from {source === 'closet' ? 'your closet' : source === 'shop' ? 'shop items' : 'closet + shop'}</p>
+                            <p className="text-sm">AI will style you from your closet</p>
                         </motion.div>
                     )}
                 </div>

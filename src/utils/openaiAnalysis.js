@@ -1,7 +1,7 @@
-// OpenAI Image Analysis for Clothing
-// Uses GPT-4o-mini with vision for clothing analysis
+// AI Image Analysis for Clothing
+// Uses Google Gemini Flash with vision for clothing analysis
 
-import { createVisionCompletion, createChatCompletion, isOpenAIConfigured } from '../lib/openai'
+import { createGeminiVisionCompletion, createGeminiCompletion, isGeminiConfigured } from '../lib/gemini'
 // Existing reference lists for matching - these are sent to AI for structured output
 export const EXISTING_COLORS = [
     "Black", "White", "Gray", "Navy", "Blue", "Red", "Pink", "Green",
@@ -41,9 +41,8 @@ export const EXISTING_CATEGORY4 = [
 
 // Main analysis function using Chat Completions API with vision
 export async function analyzeClothingImage(imageBase64) {
-    if (!isOpenAIConfigured()) {
-        console.warn('OpenAI API key not configured')
-        // Return a special error object or throw to let UI handle it
+    if (!isGeminiConfigured()) {
+        console.warn('Gemini API key not configured')
         throw new Error('MISSING_API_KEY')
     }
 
@@ -97,7 +96,7 @@ issue: [Any detected quality issue, or "None" if image is good]
 
 IMPORTANT: Only use values from the provided lists. Be accurate and helpful.`
 
-        const content = await createVisionCompletion({
+        const content = await createGeminiVisionCompletion({
             systemPrompt,
             userPrompt: 'Analyze this clothing/fashion item and extract the attributes.',
             imageBase64,
@@ -113,7 +112,7 @@ IMPORTANT: Only use values from the provided lists. Be accurate and helpful.`
         return parseTextResponse(cleanContent)
 
     } catch (error) {
-        console.error('OpenAI analysis failed:', error)
+        console.error('Gemini analysis failed:', error)
         return getFallbackAnalysis()
     }
 }
@@ -196,24 +195,16 @@ function getFallbackAnalysis() {
 
 // Generate a short description/reasoning for an outfit
 export async function generateOutfitDescription(mood, items) {
-    if (!isOpenAIConfigured()) {
+    if (!isGeminiConfigured()) {
         return "This outfit was curated to match your selected mood with a balance of style and comfort."
     }
 
     try {
         const itemDescriptions = items.map(i => `${i.title || i.name} (${i.color}, ${i.category})`).join(', ')
 
-        const content = await createChatCompletion({
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are a personal stylist. Write a concise, engaging 1-2 sentence explanation of why this outfit works for the specific mood. Mention color coordination or style balance.'
-                },
-                {
-                    role: 'user',
-                    content: `Mood: ${mood}. Items: ${itemDescriptions}. Why is this a good outfit?`
-                }
-            ],
+        const content = await createGeminiCompletion({
+            systemPrompt: 'You are a personal stylist. Write a concise, engaging 1-2 sentence explanation of why this outfit works for the specific mood. Mention color coordination or style balance.',
+            userPrompt: `Mood: ${mood}. Items: ${itemDescriptions}. Why is this a good outfit?`,
             maxTokens: 100,
             temperature: 0.7
         })
