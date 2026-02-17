@@ -22,13 +22,22 @@ export const EXISTING_CATEGORY1 = [
     "Men", "Women", "Unisex", "Kids", "Boys", "Girls"
 ]
 
-export const EXISTING_CATEGORY2 = [
-    "Clothing", "Footwear", "Accessories", "Bags", "Jewelry", "Watches"
-]
+// NEW Hierarchy: Use this for UI and validation
+export const CATEGORY_HIERARCHY = {
+    'Top': ['T-Shirt', 'Shirt', 'Blouse', 'Crop Top', 'Tank Top', 'Sweater', 'Hoodie', 'Sweatshirt', 'Cardigan', 'Vest', 'Polo', 'Bodysuit'],
+    'Bottom': ['Jeans', 'Trousers', 'Pants', 'Leggings', 'Joggers', 'Shorts', 'Skirt', 'Skort', 'Cargo Pants', 'Track Pants'],
+    'Full Body': ['Dress', 'Jumpsuit', 'Romper', 'Suit', 'Coords', 'Saree', 'Kurta Set', 'Gown'],
+    'Outerwear': ['Jacket', 'Coat', 'Blazer', 'Windbreaker', 'Puffer', 'Trench Coat', 'Bomber', 'Denim Jacket', 'Leather Jacket'],
+    'Footwear': ['Sneakers', 'Boots', 'Heels', 'Flats', 'Sandals', 'Loafers', 'Oxfords', 'Slippers', 'Flip Flops', 'Formal Shoes'],
+    'Accessories': ['Bag', 'Watch', 'Jewelry', 'Belt', 'Hat', 'Cap', 'Scarf', 'Sunglasses', 'Tie', 'Wallet', 'Gloves', 'Socks']
+}
 
+// Derived flat list for AI prompt
+export const EXISTING_CATEGORY2 = Object.values(CATEGORY_HIERARCHY).flat()
+
+// Strict Apparel Types
 export const EXISTING_CATEGORY3 = [
-    "Top", "Bottom", "Dress", "Outerwear", "Activewear", "Ethnic",
-    "Sleepwear", "Innerwear", "Sneakers", "Heels", "Flats", "Boots", "Sandals"
+    "Top", "Bottom", "Full Body", "Outerwear", "Footwear", "Accessories"
 ]
 
 // Category 4 is the Gen-Z style/aesthetic
@@ -61,11 +70,12 @@ ${EXISTING_BRANDS.join(', ')}
 ### CATEGORY 1 - Target Audience:
 ${EXISTING_CATEGORY1.join(', ')}
 
-### CATEGORY 2 - Item Type:
-${EXISTING_CATEGORY2.join(', ')}
-
-### CATEGORY 3 - Apparel Type:
+### CATEGORY 3 - Apparel Type (MUST be one of these):
 ${EXISTING_CATEGORY3.join(', ')}
+
+### CATEGORY 2 - Specific Item Type:
+(Choose the most specific type that matches the Apparel Type, e.g. T-Shirt for Top, Sneakers for Footwear)
+${EXISTING_CATEGORY2.join(', ')}
 
 ### CATEGORY 4 - Style/Aesthetic (Gen-Z fashion styles):
 ${EXISTING_CATEGORY4.join(', ')}

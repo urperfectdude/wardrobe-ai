@@ -15,6 +15,8 @@ export default function Profile() {
     const [showPreferencesFlow, setShowPreferencesFlow] = useState(false)
     const [activeTab, setActiveTab] = useState('outfits')
     const [selectedOutfit, setSelectedOutfit] = useState(null)
+    const [savedOutfits, setSavedOutfits] = useState([])
+    const [recentOutfits, setRecentOutfits] = useState([])
 
     const [preferences, setPreferences] = useState({
         thriftPreference: 'both',

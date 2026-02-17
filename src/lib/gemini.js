@@ -12,6 +12,16 @@ export function getGeminiKey() {
 }
 
 /**
+ * Get Gemini Project ID from environment
+ * @returns {string|null} Project ID or null if not configured
+ */
+export function getGeminiProjectId() {
+    return import.meta.env.VITE_GEMINI_PROJECT_ID || null
+}
+
+
+
+/**
  * Check if Gemini is configured
  * @returns {boolean}
  */
@@ -122,23 +132,33 @@ export async function createGeminiVisionCompletion({
         body.systemInstruction = { parts: [{ text: systemPrompt }] }
     }
 
-    const response = await fetch(
-        `${GEMINI_API_URL}/models/${model}:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30s timeout
+
+    try {
+        const response = await fetch(
+            `${GEMINI_API_URL}/models/${model}:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: controller.signal
+            }
+        )
+        clearTimeout(timeoutId)
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}))
+            console.error('Gemini Vision API error:', response.status, errorData)
+            throw new Error(`Gemini Vision API error: ${response.status}`)
         }
-    )
 
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        console.error('Gemini Vision API error:', response.status, errorData)
-        throw new Error(`Gemini Vision API error: ${response.status}`)
+        const data = await response.json()
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    } catch (error) {
+        clearTimeout(timeoutId)
+        throw error
     }
-
-    const data = await response.json()
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
 }
 
 /**
@@ -152,11 +172,12 @@ export async function createGeminiVisionCompletion({
  */
 export async function generateGeminiImage({
     prompt,
-    model = 'imagen-3.0-generate-002',
+    model = 'imagen-4.0-fast-generate-001',
     numberOfImages = 1,
     aspectRatio = '1:1'
 }) {
     const apiKey = getGeminiKey()
+    console.log('Gemini Image Gen using Key:', apiKey ? `${apiKey.substring(0, 8)}...` : 'undefined')
     if (!apiKey) throw new Error('Gemini API key not configured')
 
     const body = {
@@ -179,7 +200,8 @@ export async function generateGeminiImage({
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         console.error('Gemini Image Gen error:', response.status, errorData)
-        throw new Error(`Gemini Image Gen error: ${response.status}`)
+        const errorMessage = errorData.error?.message || JSON.stringify(errorData)
+        throw new Error(`Gemini Image Gen error: ${response.status} - ${errorMessage}`)
     }
 
     const data = await response.json()

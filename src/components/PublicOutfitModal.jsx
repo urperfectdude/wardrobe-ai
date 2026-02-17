@@ -1,13 +1,89 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ExternalLink, Shirt, Heart } from 'lucide-react'
+import { X, Heart, ShareNetwork, Sparkle, User, UserPlus, Check } from '@phosphor-icons/react'
+import { useAuth } from '../contexts/AuthContext'
+import { isFollowing, followUser, unfollowUser, hasLikedOutfit, likeOutfit, unlikeOutfit, getLikeCount } from '../utils/social'
+import { Link } from 'react-router-dom'
 
 export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
+    const { user } = useAuth()
+    const [liked, setLiked] = useState(false)
+    const [likes, setLikes] = useState(0)
+    const [following, setFollowing] = useState(false)
+    const [loading, setLoading] = useState(false)
 
+    useEffect(() => {
+        if (isOpen && outfit) {
+            loadSocialState()
+        }
+    }, [isOpen, outfit, user])
+
+    const loadSocialState = async () => {
+        setLoading(true)
+        try {
+            const [likeCount, userLiked, userFollowing] = await Promise.all([
+                getLikeCount(outfit.id),
+                user ? hasLikedOutfit(outfit.id) : false,
+                user && outfit.user_id ? isFollowing(outfit.user_id) : false
+            ])
+            setLikes(likeCount)
+            setLiked(userLiked)
+            setFollowing(userFollowing)
+        } catch (error) {
+            console.error('Error loading social state:', error)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const toggleLike = async () => {
+        if (!user) return // Prompt login?
+        try {
+            if (liked) {
+                await unlikeOutfit(outfit.id)
+                setLikes(p => p - 1)
+                setLiked(false)
+            } else {
+                await likeOutfit(outfit.id)
+                setLikes(p => p + 1)
+                setLiked(true)
+            }
+        } catch (error) {
+            console.error('Like error', error)
+        }
+    }
+
+    const toggleFollow = async () => {
+        if (!user || user.id === outfit.user_id) return
+        try {
+            if (following) {
+                await unfollowUser(outfit.user_id)
+                setFollowing(false)
+            } else {
+                await followUser(outfit.user_id)
+                setFollowing(true)
+            }
+        } catch (error) {
+            console.error('Follow error', error)
+        }
+    }
+
+    const handleShare = () => {
+        const url = `${window.location.origin}/outfit/${outfit.id}`
+        if (navigator.share) {
+            navigator.share({
+                title: 'Check out this outfit!',
+                url: url
+            })
+        } else {
+            navigator.clipboard.writeText(url)
+            alert('Link copied to clipboard!')
+        }
+    }
 
     if (!isOpen || !outfit) return null
 
-    const likedItems = outfit.items.filter(item => item.liked)
+    const likedItems = outfit.items?.filter(item => item.liked) || []
 
     return (
         <>
@@ -47,25 +123,69 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                         justifyContent: 'space-between',
                         marginBottom: '1.5rem'
                     }}>
-                        <div>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
-                                <span style={{ textTransform: 'capitalize' }}>{outfit.mood}</span> Outfit
-                            </h2>
-                            <p style={{ fontSize: '0.8125rem', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
-                                Shared by {outfit.user_profiles?.name || outfit.user_profiles?.username || 'Community Member'}
-                            </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            {/* Avatar */}
+                            {outfit.user_profiles?.avatar_url || outfit.user_profiles?.selfie_url ? (
+                                <img 
+                                    src={outfit.user_profiles.selfie_url || outfit.user_profiles.avatar_url} 
+                                    alt="Owner" 
+                                    style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }}
+                                />
+                            ) : (
+                                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'hsl(var(--muted))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <User size={20} />
+                                </div>
+                            )}
+
+                            <div>
+                                <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, textTransform: 'capitalize' }}>
+                                    {outfit.mood || 'Styled'} Outfit
+                                </h2>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <p style={{ fontSize: '0.75rem', color: 'hsl(var(--muted-foreground))', margin: 0 }}>
+                                        by {outfit.user_profiles?.name || 'User'}
+                                    </p>
+                                    {user && user.id !== outfit.user_id && (
+                                        <button 
+                                            onClick={toggleFollow}
+                                            style={{
+                                                background: 'transparent', border: 'none', padding: 0,
+                                                fontSize: '0.75rem', fontWeight: 600,
+                                                color: following ? 'hsl(var(--muted-foreground))' : 'hsl(var(--primary))',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            {following ? 'Following' : 'Follow'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
-                        <button
-                            onClick={onClose}
-                            style={{
-                                width: '32px', height: '32px', borderRadius: '50%',
-                                background: 'hsl(var(--secondary))', border: 'none',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            <X size={20} />
-                        </button>
+
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                                onClick={handleShare}
+                                style={{
+                                    width: '32px', height: '32px', borderRadius: '50%',
+                                    background: 'hsl(var(--secondary))', border: 'none',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', color: 'hsl(var(--foreground))'
+                                }}
+                            >
+                                <ShareNetwork size={16} />
+                            </button>
+                             <button
+                                onClick={onClose}
+                                style={{
+                                    width: '32px', height: '32px', borderRadius: '50%',
+                                    background: 'hsl(var(--secondary))', border: 'none',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', color: 'hsl(var(--foreground))'
+                                }}
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
                     </div>
 
                     {/* AI Reason */}
@@ -99,21 +219,48 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                         </div>
                     )}
 
-                    {/* Likes/Vibe */}
+                    {/* Likes/Social Bar */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.5rem',
+                        justifyContent: 'space-between',
                         marginBottom: '1.5rem',
-                        padding: '0.75rem',
-                        background: 'hsl(var(--green-100) / 0.5)',
-                        borderRadius: 'var(--radius-lg)',
-                        border: '1px solid hsl(var(--green-600) / 0.1)'
+                        gap: '1rem'
                     }}>
-                        <Heart size={16} fill="hsl(var(--green-600))" color="hsl(var(--green-600))" />
-                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'hsl(var(--green-800))' }}>
-                            {likedItems.length} items liked in this styling
-                        </span>
+                        <button
+                            onClick={toggleLike}
+                            style={{
+                                flex: 1,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                                padding: '0.75rem',
+                                background: liked ? 'hsl(var(--primary) / 0.1)' : 'hsl(var(--secondary))',
+                                color: liked ? 'hsl(var(--primary))' : 'hsl(var(--foreground))',
+                                borderRadius: 'var(--radius-lg)',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: '0.875rem'
+                            }}
+                        >
+                            <Heart size={18} weight={liked ? 'fill' : 'regular'} />
+                            {likes} Likes
+                        </button>
+
+                        <div style={{
+                            flex: 2,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.75rem',
+                            background: 'hsl(var(--secondary) / 0.5)',
+                            borderRadius: 'var(--radius-lg)',
+                            border: '1px solid hsl(var(--border))'
+                        }}>
+                            <Sparkle size={16} style={{ color: 'hsl(var(--accent))' }} />
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+                                {likedItems.length} items styled via AI
+                            </span>
+                        </div>
                     </div>
 
                     {/* Items Grid */}

@@ -13,6 +13,7 @@ import DualRangeSlider from './DualRangeSlider'
 // ─── Step definitions ───
 const STEPS = {
     NAME: 'name',
+    USERNAME: 'username',
     SELFIE: 'selfie',
     APPEARANCE: 'appearance',
     AGE_GENDER_BODY: 'age_gender_body',
@@ -26,6 +27,7 @@ const STEPS = {
 
 const ALL_STEP_ORDER = [
     STEPS.NAME,
+    STEPS.USERNAME,
     STEPS.SELFIE,
     STEPS.APPEARANCE,
     STEPS.AGE_GENDER_BODY,
@@ -102,6 +104,7 @@ const HAIR_COLORS = [
 // ─── Helper: which fields a step covers ───
 const STEP_FIELDS = {
     [STEPS.NAME]: ['name'],
+    [STEPS.USERNAME]: ['username'],
     [STEPS.SELFIE]: ['selfieUrl'],
     [STEPS.APPEARANCE]: ['skinColor', 'hairColor'],
     [STEPS.AGE_GENDER_BODY]: ['age', 'gender', 'bodyType'],
@@ -150,12 +153,14 @@ export default function PreferencesFlow({
 
     // Form data
     const [name, setName] = useState('')
+    const [username, setUsername] = useState('')
     const [selfieFile, setSelfieFile] = useState(null)
     const [selfiePreview, setSelfiePreview] = useState('')
     const [selfieUrl, setSelfieUrl] = useState('')
     const [skinColor, setSkinColor] = useState('')
     const [hairColor, setHairColor] = useState('')
     const [age, setAge] = useState('')
+    const [uploading, setUploading] = useState(false)
     const [analyzingSelfie, setAnalyzingSelfie] = useState(false)
     const [fitType, setFitType] = useState([])
     const [sizes, setSizes] = useState([])
@@ -171,6 +176,7 @@ export default function PreferencesFlow({
     // Initialize from existing data
     useEffect(() => {
         if (existingProfile?.name) setName(existingProfile.name)
+        if (existingProfile?.username) setUsername(existingProfile.username)
         if (existingProfile?.selfie_url) { setSelfieUrl(existingProfile.selfie_url); setSelfiePreview(existingProfile.selfie_url) }
         if (existingProfile?.skin_color) setSkinColor(existingProfile.skin_color)
         if (existingProfile?.hair_color) setHairColor(existingProfile.hair_color)
@@ -238,11 +244,13 @@ export default function PreferencesFlow({
     // Upload selfie and trigger analysis
     const handleSelfieNext = async () => {
         if (selfieFile && selfiePreview) {
+            setUploading(true)
             try {
                 // Compress and upload
                 const compressed = await compressImage(selfiePreview, 600)
                 const url = await uploadImageToStorage(compressed)
                 setSelfieUrl(url)
+                setUploading(false)
 
                 // Save selfie_url to profile
                 const { data: { user } } = await supabase.auth.getUser()
@@ -257,6 +265,7 @@ export default function PreferencesFlow({
                 await analyzeSelfie(compressed)
             } catch (err) {
                 console.error('Selfie upload failed:', err)
+                setUploading(false)
             }
         }
         goNext()
@@ -275,24 +284,23 @@ export default function PreferencesFlow({
         gender
     })
 
+    // Validate username format
+    const isValidUsername = (u) => /^[a-zA-Z0-9_]{3,20}$/.test(u)
+
     // Save everything to user_profiles in the background after each step
     const saveCurrentStep = async () => {
         try {
-            // savePreferences already upserts into user_profiles
+            // savePreferences already upserts into user_profiles with all fields including name, skin, etc.
             const prefs = buildPrefs()
+            // Ensure we include the identity fields in the prefs object for savePreferences to pick them up
+            prefs.name = name
+            prefs.username = username
+            prefs.skinColor = skinColor
+            prefs.hairColor = hairColor
+            prefs.age = age
+            prefs.selfieUrl = selfieUrl
+            
             await savePreferences(prefs)
-
-            // Also save name + appearance data
-            const { data: { user } } = await supabase.auth.getUser()
-            if (user) {
-                const profileUpdate = { user_id: user.id }
-                if (name.trim()) profileUpdate.name = name.trim()
-                if (skinColor) profileUpdate.skin_color = skinColor
-                if (hairColor) profileUpdate.hair_color = hairColor
-                if (age) profileUpdate.age = parseInt(age) || null
-                if (selfieUrl) profileUpdate.selfie_url = selfieUrl
-                await supabase.from('user_profiles').upsert(profileUpdate)
-            }
         } catch (err) {
             console.error('Background save failed:', err)
         }
@@ -326,15 +334,24 @@ export default function PreferencesFlow({
     const handleFinalSave = async () => {
         setLoading(true)
         try {
-            await savePreferences(buildPrefs())
+            const prefs = buildPrefs()
+            prefs.name = name
+            prefs.username = username
+            prefs.skinColor = skinColor
+            prefs.hairColor = hairColor
+            prefs.age = age
+            prefs.selfieUrl = selfieUrl
+            
+            // We need to pass a flag or handle onboarding_complete separately
+            // Since savePreferences is generic, we'll do a focused update for completion
+            await savePreferences(prefs)
 
             const { data: { user } } = await supabase.auth.getUser()
             if (user) {
-                await supabase.from('user_profiles').upsert({
-                    user_id: user.id,
-                    ...(name.trim() ? { name: name.trim() } : {}),
-                    onboarding_complete: true
-                })
+                await supabase.from('user_profiles').update({ 
+                    onboarding_complete: true,
+                    updated_at: new Date().toISOString()
+                }).eq('user_id', user.id)
             }
             goNext() // goes to DONE step
         } catch (err) {
@@ -434,6 +451,37 @@ export default function PreferencesFlow({
                             </div>
                         </motion.div>
                     )}
+
+                    {/* ─── STEP 1.5: USERNAME ─── */}
+                    {currentStep === STEPS.USERNAME && (
+                        <motion.div key="username" variants={slideVariants} initial="enter" animate="center" exit="exit" className="prefs-flow-step">
+                            <div className="prefs-flow-step-body">
+                                <div className="prefs-flow-header-section">
+                                    <span className="prefs-flow-emoji">🏷️</span>
+                                    <h1 className="prefs-flow-title">pick a username</h1>
+                                    <p className="prefs-flow-subtitle">unique to u, 3+ chars</p>
+                                </div>
+                                <input
+                                    type="text"
+                                    className="prefs-flow-text-input"
+                                    placeholder="e.g. fashion_killa"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                                    autoFocus
+                                />
+                                {!isValidUsername(username) && username.length > 0 && (
+                                    <p style={{ color: 'hsl(var(--destructive))', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                                        Must be 3-20 chars, letters/numbers/underscore only
+                                    </p>
+                                )}
+                            </div>
+                            <div className="prefs-flow-actions">
+                                <button className="prefs-flow-continue-btn" onClick={goNext} disabled={!isValidUsername(username)}>
+                                    continue <ArrowRight size={16} />
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
                     {/* ─── STEP 2: SELFIE UPLOAD ─── */}
                     {currentStep === STEPS.SELFIE && (
                         <motion.div key="selfie" variants={slideVariants} initial="enter" animate="center" exit="exit" className="prefs-flow-step">
@@ -493,8 +541,10 @@ export default function PreferencesFlow({
                             </div>
                             <div className="prefs-flow-actions">
                                 <button className="prefs-flow-skip-btn" onClick={handleSkip}>skip for now</button>
-                                <button className="prefs-flow-continue-btn" onClick={handleSelfieNext} disabled={analyzingSelfie}>
-                                    {analyzingSelfie ? <><Loader2 size={16} className="animate-spin" /> analyzing...</> : <>continue <ArrowRight size={16} /></>}
+                                <button className="prefs-flow-continue-btn" onClick={handleSelfieNext} disabled={analyzingSelfie || uploading}>
+                                    {uploading ? <><Loader2 size={16} className="animate-spin" /> uploading...</> : 
+                                     analyzingSelfie ? <><Loader2 size={16} className="animate-spin" /> analyzing...</> : 
+                                     <>continue <ArrowRight size={16} /></>}
                                 </button>
                             </div>
                         </motion.div>

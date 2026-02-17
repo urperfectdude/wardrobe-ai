@@ -6,6 +6,7 @@ import { getPublicOutfits } from '../utils/storage'
 import { useAuth } from '../contexts/AuthContext'
 import OnboardingFlow from '../components/OnboardingFlow'
 import PublicOutfitModal from '../components/PublicOutfitModal'
+import PublicOutfitCard from '../components/PublicOutfitCard'
 
 export default function Home() {
     const navigate = useNavigate()
@@ -258,100 +259,14 @@ export default function Home() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {publicOutfits.map((outfit) => {
-                            const owner = outfit.user_profiles
-                            return (
-                            <motion.div
+                        {publicOutfits.map((outfit) => (
+                            <PublicOutfitCard
                                 key={outfit.id}
-                                initial={{ opacity: 0, y: 20 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true }}
+                                outfit={outfit}
                                 onClick={() => setSelectedOutfit(outfit)}
-                                style={{
-                                    background: 'hsl(var(--card))',
-                                    border: '1px solid hsl(var(--border))',
-                                    borderRadius: 'var(--radius-xl)',
-                                    padding: '1rem',
-                                    boxShadow: 'var(--shadow-sm)',
-                                    cursor: 'pointer',
-                                    transition: 'transform 0.2s ease, box-shadow 0.2s ease'
-                                }}
-                                whileHover={{ scale: 1.01, boxShadow: 'var(--shadow-md)' }}
-                            >
-                                {/* Owner Header */}
-                                {owner && (
-                                    <div
-                                        onClick={(e) => { e.stopPropagation(); if (owner.username) window.location.href = `/user/${owner.username}` }}
-                                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.625rem', cursor: owner.username ? 'pointer' : 'default' }}
-                                    >
-                                        {(owner.selfie_url || owner.avatar_url) ? (
-                                            <img src={owner.selfie_url || owner.avatar_url} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-                                        ) : (
-                                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'hsl(var(--muted))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6875rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}>
-                                                {(owner.name || '?')[0].toUpperCase()}
-                                            </div>
-                                        )}
-                                        <div>
-                                            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{owner.name || 'Stylist'}</span>
-                                            {owner.username && <span style={{ fontSize: '0.625rem', color: 'hsl(var(--muted-foreground))', marginLeft: '0.375rem' }}>@{owner.username}</span>}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Horizontal Items Strip with Fade & CTA - No Header */}
-                                <div style={{ position: 'relative', height: '120px' }}>
-                                    <div style={{
-                                        display: 'flex',
-                                        gap: '0.5rem',
-                                        overflowX: 'auto',
-                                        height: '100%',
-                                        scrollbarWidth: 'none',
-                                        paddingRight: '140px'
-                                    }}>
-                                        {outfit.items.map((item, i) => (
-                                            <div key={i} style={{
-                                                position: 'relative',
-                                                height: '100%',
-                                                aspectRatio: '1/1',
-                                                borderRadius: 'var(--radius-lg)',
-                                                overflow: 'hidden',
-                                                border: '1px solid hsl(var(--border))',
-                                                flexShrink: 0
-                                            }}>
-                                                <img
-                                                    src={item.image}
-                                                    alt=""
-                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {/* Fade Overlay & CTA */}
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        right: 0,
-                                        bottom: 0,
-                                        width: '240px',
-                                        background: 'linear-gradient(to right, transparent, hsl(var(--card)) 40%)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'flex-end',
-                                        paddingLeft: '2rem'
-                                    }}>
-                                        <button
-                                            className="btn btn-primary btn-sm"
-                                            style={{ whiteSpace: 'nowrap' }}
-                                            onClick={(e) => { e.stopPropagation(); handleMoodSelect(outfit.mood); }}
-                                        >
-                                            Try '{outfit.mood}' Outfit
-                                        </button>
-                                    </div>
-                                </div>
-                            </motion.div>
-                            )
-                        })}
+                                onMoodSelect={handleMoodSelect}
+                            />
+                        ))}
                     </div>
 
                     {hasMore && (

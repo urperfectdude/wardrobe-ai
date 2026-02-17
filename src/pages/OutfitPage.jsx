@@ -2,18 +2,27 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Heart, ShareNetwork, Sparkle, UserCircle } from '@phosphor-icons/react'
-import { getOutfitById, getPublicProfileById, getLikeCount, hasLikedOutfit, likeOutfit, unlikeOutfit } from '../utils/social'
+import { getOutfitById, getPublicProfileById, getLikeCount, hasLikedOutfit, likeOutfit, unlikeOutfit, isFollowing, followUser, unfollowUser } from '../utils/social'
+import { updateRecentOutfit } from '../utils/storage'
+import { generateTryOn } from '../utils/generateTryOn'
+import MissingDataModal from '../components/MissingDataModal'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function OutfitPage() {
     const { id } = useParams()
-    const { user } = useAuth()
+    const { user, userProfile } = useAuth()
     const [outfit, setOutfit] = useState(null)
     const [owner, setOwner] = useState(null)
     const [likes, setLikes] = useState(0)
     const [hasLiked, setHasLiked] = useState(false)
     const [loading, setLoading] = useState(true)
     const [likeLoading, setLikeLoading] = useState(false)
+    const [isFollowingOwner, setIsFollowingOwner] = useState(false)
+    const [followLoading, setFollowLoading] = useState(false)
+    
+    // Try-On State
+    const [tryOnLoading, setTryOnLoading] = useState(false)
+    const [showMissingModal, setShowMissingModal] = useState(false)
 
     useEffect(() => {
         loadOutfit()
@@ -26,14 +35,16 @@ export default function OutfitPage() {
             if (!outfitData) { setLoading(false); return }
             setOutfit(outfitData)
 
-            const [ownerData, likeCount, liked] = await Promise.all([
+            const [ownerData, likeCount, liked, following] = await Promise.all([
                 getPublicProfileById(outfitData.user_id),
                 getLikeCount(id),
-                user ? hasLikedOutfit(id) : false
+                user ? hasLikedOutfit(id) : false,
+                user && outfitData.user_id !== user.id ? isFollowing(outfitData.user_id) : false
             ])
             setOwner(ownerData)
             setLikes(likeCount)
             setHasLiked(liked)
+            setIsFollowingOwner(following)
         } catch (err) {
             console.error('Error loading outfit:', err)
         } finally {
@@ -48,7 +59,7 @@ export default function OutfitPage() {
             if (hasLiked) {
                 await unlikeOutfit(id)
                 setHasLiked(false)
-                setLikes(prev => prev - 1)
+                setLikes(prev => Math.max(0, prev - 1))
             } else {
                 await likeOutfit(id)
                 setHasLiked(true)
@@ -56,8 +67,29 @@ export default function OutfitPage() {
             }
         } catch (err) {
             console.error('Like error:', err)
+            // Revert on error if needed, but for now just log
         } finally {
             setLikeLoading(false)
+        }
+    }
+
+    const handleFollow = async (e) => {
+        e.preventDefault() 
+        e.stopPropagation()
+        if (!user || !owner) return
+        setFollowLoading(true)
+        try {
+            if (isFollowingOwner) {
+                await unfollowUser(owner.user_id)
+                setIsFollowingOwner(false)
+            } else {
+                await followUser(owner.user_id)
+                setIsFollowingOwner(true)
+            }
+        } catch (err) {
+            console.error('Follow error:', err)
+        } finally {
+            setFollowLoading(false)
         }
     }
 
@@ -70,6 +102,48 @@ export default function OutfitPage() {
         } else {
             navigator.clipboard.writeText(window.location.href)
             alert('Link copied!')
+        }
+    }
+
+    const handleImagineMeStart = () => {
+        if (!user) return // Should prompt login?
+        
+        const isProfileComplete = userProfile?.selfie_url && userProfile?.body_type && userProfile?.skin_color
+        if (!isProfileComplete) {
+            setShowMissingModal(true)
+        } else {
+            executeTryOn()
+        }
+    }
+
+    const executeTryOn = async () => {
+        setShowMissingModal(false)
+        setTryOnLoading(true)
+        try {
+            // Generate
+            const url = await generateTryOn(
+                {
+                    gender: userProfile?.gender || 'woman',
+                    age: userProfile?.age,
+                    bodyType: userProfile?.body_type,
+                    skinColor: userProfile?.skin_color,
+                    hairColor: userProfile?.hair_color
+                },
+                outfit.items,
+                userProfile?.selfie_url
+            )
+
+            // Update DB
+            await updateRecentOutfit(id, { imagine_on_avatar: url })
+            
+            // Update Local State
+            setOutfit(prev => ({ ...prev, imagine_on_avatar: url }))
+
+        } catch (error) {
+            console.error('Try-On failed:', error)
+            alert('Failed to generate try-on. Please try again.')
+        } finally {
+            setTryOnLoading(false)
         }
     }
 
@@ -120,8 +194,26 @@ export default function OutfitPage() {
                         <UserCircle size={36} style={{ color: 'hsl(var(--muted-foreground))' }} />
                     )}
                     <div>
-                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'hsl(var(--foreground))', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             {owner.name || 'Fashionista'}
+                            {user && user.id !== owner.user_id && (
+                                <button
+                                    onClick={handleFollow}
+                                    disabled={followLoading}
+                                    style={{
+                                        fontSize: '0.625rem',
+                                        padding: '0.125rem 0.5rem',
+                                        borderRadius: 'var(--radius-full)',
+                                        border: isFollowingOwner ? '1px solid hsl(var(--border))' : 'none',
+                                        background: isFollowingOwner ? 'transparent' : 'hsl(var(--primary))',
+                                        color: isFollowingOwner ? 'hsl(var(--muted-foreground))' : 'white',
+                                        cursor: 'pointer',
+                                        fontWeight: 600
+                                    }}
+                                >
+                                    {followLoading ? '...' : isFollowingOwner ? 'Following' : 'Follow'}
+                                </button>
+                            )}
                         </div>
                         {owner.username && (
                             <div style={{ fontSize: '0.6875rem', color: 'hsl(var(--muted-foreground))' }}>
@@ -152,6 +244,26 @@ export default function OutfitPage() {
                             </span>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            {/* Imagine Me Button (Only for owner or generally available? Plan implies available to all) */}
+                            {!outfit.imagine_on_avatar && user && (
+                                <button
+                                    onClick={handleImagineMeStart}
+                                    disabled={tryOnLoading}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '0.25rem',
+                                        padding: '0.375rem 0.75rem', borderRadius: 'var(--radius-full)',
+                                        border: '1px solid hsl(var(--primary))',
+                                        background: 'hsl(var(--primary))',
+                                        color: 'white',
+                                        cursor: 'pointer',
+                                        fontSize: '0.75rem', fontWeight: 600
+                                    }}
+                                >
+                                    {tryOnLoading ? <Sparkle className="animate-spin" /> : <Sparkle weight="fill" />}
+                                    Imagine Me
+                                </button>
+                            )}
+
                             <button
                                 onClick={handleLike}
                                 disabled={likeLoading || !user}
@@ -223,6 +335,35 @@ export default function OutfitPage() {
                         ))}
                     </div>
 
+                    {/* Imagine Me Result */}
+                    {outfit.imagine_on_avatar && (
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            style={{ 
+                                marginTop: '1rem', 
+                                position: 'relative', 
+                                borderRadius: 'var(--radius-lg)', 
+                                overflow: 'hidden',
+                                border: '1px solid hsl(var(--border))'
+                            }}
+                        >
+                            <div style={{ 
+                                position: 'absolute', top: '0.5rem', left: '0.5rem', 
+                                background: 'rgba(0,0,0,0.6)', color: 'white', 
+                                padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-full)',
+                                fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem'
+                            }}>
+                                <Sparkle weight="fill" /> Virtual Try-On
+                            </div>
+                            <img 
+                                src={outfit.imagine_on_avatar} 
+                                alt="Virtual Try-On" 
+                                style={{ width: '100%', display: 'block' }} 
+                            />
+                        </motion.div>
+                    )}
+
                     {/* Description */}
                     {outfit.reason && (
                         <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'hsl(var(--muted) / 0.5)', borderRadius: 'var(--radius-lg)' }}>
@@ -237,6 +378,13 @@ export default function OutfitPage() {
                     )}
                 </div>
             </motion.div>
+
+            <MissingDataModal 
+                isOpen={showMissingModal} 
+                onClose={() => setShowMissingModal(false)}
+                onUpdateProfile={() => window.location.href = '/profile'}
+                onProceed={executeTryOn}
+            />
         </div>
     )
 }

@@ -268,8 +268,7 @@ export async function savePreferences(prefs) {
         await supabaseFetch('user_profiles', {
             method: 'POST',
             headers: { 'Prefer': 'resolution=merge-duplicates' },
-            body: dbPrefs,
-            query: 'on_conflict=user_id'
+            body: dbPrefs
         })
 
         return prefs
@@ -397,6 +396,9 @@ export function compressImage(base64, maxDimension = 800) {
                 resolve(canvas.toDataURL('image/jpeg', 0.7))
             }
         }
+        img.onerror = (err) => {
+            reject(new Error('Failed to load image for compression'))
+        }
         img.src = base64
     })
 }
@@ -438,32 +440,42 @@ export async function uploadImageToStorage(base64Data) {
         console.log('Target URL:', uploadUrl)
 
         // Execute fetch directly to bypass SDK issues
-        const response = await fetch(uploadUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-                'Content-Type': contentType,
-                'x-upsert': 'false'
-            },
-            body: bytes
-        })
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30s timeout
 
-        if (!response.ok) {
-            const errorText = await response.text()
-            console.error('REST Upload Failed:', response.status, errorText)
-            throw new Error(`Upload failed (${response.status}): ${errorText}`)
+        try {
+            const response = await fetch(uploadUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': contentType,
+                    'x-upsert': 'false'
+                },
+                body: bytes,
+                signal: controller.signal
+            })
+            clearTimeout(timeoutId)
+
+            if (!response.ok) {
+                const errorText = await response.text()
+                console.error('REST Upload Failed:', response.status, errorText)
+                throw new Error(`Upload failed (${response.status}): ${errorText}`)
+            }
+
+            const data = await response.json()
+
+            // Construct public URL manually
+            const publicUrl = `${supabaseUrl}/storage/v1/object/public/closet-items/${fileName}`
+
+            console.log('Upload successful via REST, URL:', publicUrl)
+            return publicUrl
+        } catch (error) {
+            clearTimeout(timeoutId)
+            throw error
         }
-
-        const data = await response.json()
-
-        // Construct public URL manually
-        const publicUrl = `${supabaseUrl}/storage/v1/object/public/closet-items/${fileName}`
-
-        console.log('Upload successful via REST, URL:', publicUrl)
-        return publicUrl
     } catch (error) {
         console.error('Error uploading to storage:', error)
-        throw error // Propagate error to caller
+        throw error
     }
 }
 
@@ -488,6 +500,7 @@ export async function saveRecentOutfit(outfit, preferences = null) {
             is_public: false
         }
         if (outfit.missing_items) body.missing_items = outfit.missing_items
+        if (outfit.imagine_on_avatar) body.imagine_on_avatar = outfit.imagine_on_avatar
 
         const data = await supabaseFetch('recent_outfits', {
             method: 'POST',
@@ -613,30 +626,82 @@ export async function getSavedOutfits() {
     }
 }
 
+export async function deleteRecentOutfit(id) {
+    try {
+        const data = await supabaseFetch('recent_outfits', {
+            query: `id=eq.${id}`,
+            method: 'DELETE'
+        })
+        return true
+    } catch (error) {
+        console.error('Error deleting recent outfit:', error)
+        return false
+    }
+}
+
+export async function updateRecentOutfit(id, updates) {
+    try {
+        const session = await getAuthSession()
+        const user = session?.user
+        if (!user) return null
+
+        const data = await supabaseFetch('recent_outfits', {
+            method: 'PATCH',
+            query: `id=eq.${id}`,
+            body: {
+                ...updates,
+                updated_at: new Date().toISOString()
+            }
+        })
+        return Array.isArray(data) ? data[0] : data
+    } catch (error) {
+        console.error('Error updating recent outfit:', error)
+        throw error
+    }
+}
+
 export async function getOutfitHistory() {
     return getRecentOutfits()
 }
 
 export async function getPublicOutfits(limit = 10, offset = 0) {
     try {
-        // Query recent_outfits joined with user_profiles for owner info
-        const data = await supabaseFetch('recent_outfits', {
-            query: `select=*,user_profiles!recent_outfits_user_id_fkey(name,username,avatar_url,selfie_url)&is_public=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
+        // 1. Fetch public outfits (raw)
+        const outfits = await supabaseFetch('recent_outfits', {
+            query: `is_public=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
             skipAuth: true
         })
-        return data || []
-    } catch (error) {
-        console.error('Error fetching public outfits:', error)
-        // Fallback without join if FK doesn't exist yet
-        try {
-            const data = await supabaseFetch('recent_outfits', {
-                query: `is_public=eq.true&order=created_at.desc&limit=${limit}&offset=${offset}`,
-                skipAuth: true
-            })
-            return data || []
-        } catch (e) {
-            return []
-        }
+
+        if (!outfits || outfits.length === 0) return []
+
+        // 2. Extract unique user IDs
+        const userIds = [...new Set(outfits.map(o => o.user_id).filter(Boolean))]
+
+        if (userIds.length === 0) return outfits
+
+        // 3. Fetch profiles for these users
+        // Note: user_profiles PK is usually id, but we need to match on user_id column
+        // Check if we can select by user_id
+        const profiles = await supabaseFetch('user_profiles', {
+            query: `user_id=in.(${userIds.join(',')})`,
+            skipAuth: true
+        })
+
+        // 4. Map profiles by user_id for O(1) lookup
+        const profileMap = (profiles || []).reduce((acc, p) => {
+            acc[p.user_id] = p
+            return acc
+        }, {})
+
+        // 5. Merge profile data into outfits
+        return outfits.map(o => ({
+            ...o,
+            user_profiles: profileMap[o.user_id] || null
+        }))
+
+    } catch (e) {
+        console.error('Error fetching public outfits:', e)
+        return []
     }
 }
 

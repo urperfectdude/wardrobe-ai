@@ -1,23 +1,29 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple, Check, SignIn } from '@phosphor-icons/react'
+import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple, Check, SignIn, Rows, SquaresFour, Plus } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     getWardrobeItems,
     saveWardrobeItem,
     deleteWardrobeItem,
     imageToBase64,
-    compressImage
+    compressImage,
+    saveRecentOutfit,
+    getPreferences
 } from '../utils/storage'
+import { useNavigate } from 'react-router-dom'
+import MissingDataModal from '../components/MissingDataModal'
+import { generateTryOn } from '../utils/generateTryOn'
 import { useAuth } from '../contexts/AuthContext'
 import OnboardingFlow from '../components/OnboardingFlow'
+import ImagineMeResultModal from '../components/ImagineMeResultModal'
 import {
     analyzeClothingImage,
     EXISTING_COLORS,
     EXISTING_BRANDS,
     EXISTING_CATEGORY1,
-    EXISTING_CATEGORY2,
     EXISTING_CATEGORY3,
-    EXISTING_CATEGORY4
+    EXISTING_CATEGORY4,
+    CATEGORY_HIERARCHY
 } from '../utils/openaiAnalysis'
 
 const COLORS = [
@@ -53,13 +59,29 @@ const CATEGORY_ICONS = {
 }
 
 export default function MyCloset() {
-    const { user } = useAuth()
+    const { user, userProfile } = useAuth()
+    const navigate = useNavigate()
+
+    // Selection & Try-On State
+    const [selectedItems, setSelectedItems] = useState([])
+    const [showMissingDataModal, setShowMissingDataModal] = useState(false)
+    const [tryOnLoading, setTryOnLoading] = useState(false)
+    const [toast, setToast] = useState({ message: '', visible: false })
+
+    // Auto-hide toast
+    useEffect(() => {
+        if (toast.visible) {
+            const timer = setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000)
+            return () => clearTimeout(timer)
+        }
+    }, [toast.visible])
 
     // Main Closet State
     const [items, setItems] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [filterCategory, setFilterCategory] = useState('all')
+    const [viewMode, setViewMode] = useState('grid') // 'grid' | 'rows'
     const [deleteConfirm, setDeleteConfirm] = useState(null)
     const [showLogin, setShowLogin] = useState(false)
     const [dragOver, setDragOver] = useState(false)
@@ -68,10 +90,15 @@ export default function MyCloset() {
     const [saving, setSaving] = useState(false)
     const [saveError, setSaveError] = useState(null)
 
+
     // Unified Upload State
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
     const [uploadQueue, setUploadQueue] = useState([]) // Array of {id, file, image, analysis, status: 'analyzing'|'done'|'error', error: null}
     const [activeUploadTab, setActiveUploadTab] = useState(0)
+
+    // Imagine Me Result State
+    const [showImagineModal, setShowImagineModal] = useState(false)
+    const [imagineResult, setImagineResult] = useState(null)
 
     // Refs for file inputs
     const singleFileInputRef = useRef(null)
@@ -99,6 +126,101 @@ export default function MyCloset() {
         setUploadQueue([])
         setActiveUploadTab(0)
         setSaveError(null)
+    }
+
+    // Toggle Selection Mode
+    const toggleSelectionMode = () => {
+        setSelectionMode(!selectionMode)
+        setSelectedItems([])
+    }
+
+    const handleItemClick = (item) => {
+        setSelectedItems(prev => {
+            if (prev.includes(item.id)) {
+                return prev.filter(id => id !== item.id)
+            } else {
+                // Check if an item with the same Apparel Type (category3) is already selected
+                // Note: item.category3 might be undefined for old items, so we check if it exists
+                if (item.category3) {
+                    const selectedObjects = items.filter(i => prev.includes(i.id))
+                    const duplicateType = selectedObjects.find(i => i.category3 === item.category3)
+                    
+                    if (duplicateType) {
+                        setToast({ 
+                            message: `You can't select 2 ${item.category3}s for an outfit`, 
+                            visible: true 
+                        })
+                        return prev
+                    }
+                }
+                return [...prev, item.id]
+            }
+        })
+    }
+
+    // "Imagine Me" Flow
+    const handleImagineMeClick = () => {
+        // Check profile completeness
+        const isProfileComplete = userProfile?.selfie_url && userProfile?.body_type && userProfile?.skin_color
+        if (!isProfileComplete) {
+            setShowMissingDataModal(true)
+        } else {
+            executeTryOn()
+        }
+    }
+
+    const executeTryOn = async () => {
+        setShowMissingDataModal(false)
+        setTryOnLoading(true)
+        try {
+            const selectedItemObjects = items.filter(i => selectedItems.includes(i.id))
+            
+            // Generate Image
+            const tryOnImageUrl = await generateTryOn(
+                {
+                    gender: userProfile?.gender || 'woman',
+                    age: userProfile?.age,
+                    bodyType: userProfile?.body_type,
+                    skinColor: userProfile?.skin_color,
+                    hairColor: userProfile?.hair_color
+                },
+                selectedItemObjects,
+                userProfile?.selfie_url
+            )
+            console.log('Try-On Result URL:', tryOnImageUrl)
+
+            // Save Outfit
+            const outfit = {
+                items: selectedItemObjects,
+                mood: 'Try-On',
+                description: 'AI Generated Virtual Try-On',
+                missing_items: [],
+                imagine_on_avatar: tryOnImageUrl
+            }
+
+            const saved = await saveRecentOutfit(outfit, {
+                thriftPreference: 'both', // defaults
+                sizes: [],
+                budget: [0, 10000]
+            })
+
+            if (saved && saved.id) {
+                setImagineResult(saved)
+                setShowImagineModal(true)
+            } else {
+                // Fallback if save returns weird format
+                 console.error('Saved outfit format unexpected', saved)
+                 alert('Outfit generated but failed to save properly.')
+            }
+
+        } catch (error) {
+            console.error('Try-On failed:', error)
+            alert(`Failed to generate try-on: ${error.message}`)
+        } finally {
+            setTryOnLoading(false)
+            setSelectionMode(false)
+            setSelectedItems([])
+        }
     }
 
     // Unified file processor
@@ -312,12 +434,62 @@ export default function MyCloset() {
 
     return (
         <div className="container">
-            <div style={{ marginBottom: '1rem' }}>
-                <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>My Closet</h1>
-                <p className="text-muted text-sm">
-                    {items.length === 0 ? "Let's build your digital wardrobe" : 'AI auto-detects style & category'}
-                </p>
+            <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <h1 style={{ marginBottom: '0.25rem', fontSize: '1.5rem' }}>My Closet</h1>
+                    <p className="text-muted text-sm">
+                        {items.length === 0 ? "Let's build your digital wardrobe" : 'Tap items to select for Try-On'}
+                    </p>
+                </div>
+                {/* Header Upload Button (replacing big CTA) */}
+                <button 
+                    className="btn btn-primary" 
+                    onClick={() => {
+                        if (!user) setShowLogin(true)
+                        else singleFileInputRef.current?.click()
+                    }}
+                    style={{ gap: '0.5rem', padding: '0.5rem 1rem' }}
+                >
+                    <Plus size={16} weight="bold" />
+                    <span style={{ fontSize: '0.875rem' }}>Add Item</span>
+                </button>
+                {/* Hidden File Input for Header Button - Updated to Multi-Upload */}
+                <input
+                    ref={singleFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => handleMultiFileSelect(e.target.files)}
+                    style={{ display: 'none' }}
+                />
             </div>
+
+            {/* Toast Notification */}
+            <AnimatePresence>
+                {toast.visible && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20, x: '-50%' }}
+                        animate={{ opacity: 1, y: 0, x: '-50%' }}
+                        exit={{ opacity: 0, y: 20, x: '-50%' }}
+                        style={{
+                            position: 'fixed',
+                            bottom: '5rem',
+                            left: '50%',
+                            background: 'hsl(var(--foreground))',
+                            color: 'hsl(var(--background))',
+                            padding: '0.75rem 1.25rem',
+                            borderRadius: 'var(--radius-full)',
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            boxShadow: 'var(--shadow-lg)',
+                            zIndex: 2000,
+                            whiteSpace: 'nowrap'
+                        }}
+                    >
+                        {toast.message}
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Progress Indicator for new users */}
             {items.length < 3 && (
@@ -372,202 +544,150 @@ export default function MyCloset() {
                 </motion.div>
             )}
 
-            {/* Upload Zone - enhanced with camera priority */}
-            <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`dropzone ${dragOver ? 'dragover' : ''}`}
-                onDrop={handleDrop}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                style={{ marginBottom: '1.5rem', cursor: 'pointer' }}
-                onClick={() => {
-                    if (!user) {
-                        setShowLogin(true)
-                    } else {
-                        singleFileInputRef.current?.click()
-                    }
-                }}
-            >
-                <input
-                    ref={singleFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(e) => handleFileSelect(e.target.files[0])}
-                    style={{ display: 'none' }}
-                />
-                <UploadSimple className="dropzone-icon" />
-                <div className="dropzone-text">
-                    <h4>{items.length === 0 ? 'Take a photo or upload' : 'Add more clothes'}</h4>
-                    <p>AI detects color, style & issues</p>
-                </div>
-            </motion.div>
-
-            {/* Multi-file upload button */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                <label
-                    className="btn btn-outline"
-                    style={{ flex: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.375rem' }}
-                    onClick={(e) => {
-                        if (!user) {
-                            e.preventDefault()
-                            setShowLogin(true)
-                        }
-                    }}
-                >
-                    <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        onChange={(e) => handleMultiFileSelect(e.target.files)}
-                        style={{ display: 'none' }}
-                        onClick={(e) => {
-                            if (!user) {
-                                e.preventDefault()
-                                e.stopPropagation()
-                            }
-                        }}
-                    />
-                    <UploadSimple size={16} />
-                    Upload Multiple
-                </label>
-            </div>
-
-
-
-            {/* Filter */}
-            <div style={{ marginBottom: '1rem', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '0.5rem' }}>
-                <div style={{ display: 'inline-flex', gap: '0.25rem' }}>
-                    <button className={`chip ${filterCategory === 'all' ? 'active' : ''}`} onClick={() => setFilterCategory('all')} style={{ fontSize: '0.6875rem', minHeight: '28px' }}>
-                        All ({items.length})
-                    </button>
-                    {EXISTING_CATEGORY3.filter(cat => items.some(i => i.category === cat || i.category3 === cat)).map(cat => (
-                        <button
-                            key={cat}
-                            className={`chip ${filterCategory === cat ? 'active' : ''}`}
-                            onClick={() => setFilterCategory(cat)}
-                            style={{ fontSize: '0.6875rem', minHeight: '28px' }}
-                        >
-                            {CATEGORY_ICONS[cat] || '👔'} {items.filter(i => i.category === cat || i.category3 === cat).length}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Closet Grid */}
-            {filteredItems.length === 0 ? (
-                <div className="empty-state">
-                    <TShirt className="empty-state-icon" />
-                    <h3>Your closet is empty</h3>
-                    <p>Upload clothes to get AI-powered styling</p>
-                </div>
-            ) : (
-                <div className="closet-grid">
-                    {filteredItems.map((item, idx) => (
-                        <motion.div
-                            key={item.id}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ delay: idx * 0.02 }}
-                            style={{
-                                background: 'white',
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden',
-                                border: '1px solid hsl(var(--border))'
-                            }}
-                        >
-                            {/* Image container */}
-                            <div style={{ position: 'relative', aspectRatio: '1/1' }}>
-                                <img
-                                    src={item.image}
-                                    alt={item.title || item.category}
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                />
-                                {/* Delete button - top right */}
+            {/* View Toggle & Content */}
+            {viewMode === 'grid' ? (
+                <>
+                    {/* Grid View Filters (Text Only) */}
+                    <div style={{ marginBottom: '1rem', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '0.5rem' }}>
+                        <div style={{ display: 'inline-flex', gap: '0.25rem' }}>
+                            <button className={`chip ${filterCategory === 'all' ? 'active' : ''}`} onClick={() => setFilterCategory('all')} style={{ fontSize: '0.75rem', minHeight: '32px' }}>
+                                All ({items.length})
+                            </button>
+                            {EXISTING_CATEGORY3.filter(cat => items.some(i => i.category === cat || i.category3 === cat)).map(cat => (
                                 <button
-                                    className="btn btn-icon"
-                                    style={{
-                                        position: 'absolute',
-                                        top: '0.5rem',
-                                        right: '0.5rem',
-                                        background: 'rgba(255, 255, 255, 0.5)',
-                                        color: 'hsl(var(--destructive))',
-                                        width: '40px',
-                                        height: '40px',
-                                        borderRadius: 'var(--radius-md)',
-                                        backdropFilter: 'blur(4px)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        border: 'none',
-                                        cursor: 'pointer'
-                                    }}
-                                    onClick={() => handleDeleteClick(item.id)}
+                                    key={cat}
+                                    className={`chip ${filterCategory === cat ? 'active' : ''}`}
+                                    onClick={() => setFilterCategory(cat)}
+                                    style={{ fontSize: '0.75rem', minHeight: '32px' }}
                                 >
-                                    <Trash size={20} />
+                                    {cat} ({items.filter(i => i.category === cat || i.category3 === cat).length})
                                 </button>
-                            </div>
+                            ))}
+                        </div>
+                    </div>
 
-                            {/* Info section */}
-                            <div style={{ padding: '0.75rem' }}>
-                                {/* Title */}
-                                <p style={{
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    margin: 0,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                }}>
-                                    {item.title || item.category3 || 'Untitled'}
-                                </p>
-
-                                {/* Type & Style */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
-                                    {item.category3 && (
-                                        <span style={{
-                                            fontSize: '0.5625rem',
-                                            color: 'hsl(var(--muted-foreground))',
-                                            background: 'hsl(var(--secondary))',
-                                            padding: '0.0625rem 0.25rem',
-                                            borderRadius: '3px'
-                                        }}>
-                                            {item.category3}
-                                        </span>
-                                    )}
-                                    {item.category4 && (
-                                        <span style={{
-                                            fontSize: '0.5625rem',
-                                            color: 'hsl(var(--muted-foreground))',
-                                            background: 'hsl(var(--secondary))',
-                                            padding: '0.0625rem 0.25rem',
-                                            borderRadius: '3px'
-                                        }}>
-                                            {item.category4}
-                                        </span>
-                                    )}
+                    {/* Closet Grid */}
+                    {filteredItems.length === 0 ? (
+                        <div className="empty-state">
+                            <TShirt className="empty-state-icon" />
+                            <h3>No items found</h3>
+                            <p>Try changing filters or upload new clothes</p>
+                        </div>
+                    ) : (
+                        <div className="closet-grid">
+                            {filteredItems.map((item, idx) => (
+                                <ItemCard 
+                                    key={item.id} 
+                                    item={item} 
+                                    idx={idx} 
+                                    selectedItems={selectedItems} 
+                                    handleItemClick={handleItemClick} 
+                                    handleDeleteClick={handleDeleteClick} 
+                                />
+                            ))}
+                        </div>
+                    )}
+                </>
+            ) : (
+                /* Rows View */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '5rem' }}>
+                    {EXISTING_CATEGORY3.map(cat => {
+                        const catItems = items.filter(i => i.category === cat || i.category3 === cat)
+                        return (
+                            <div key={cat} style={{ overflow: 'hidden' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', paddingLeft: '0.25rem' }}>
+                                    <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>{cat}</h3>
+                                    <span style={{ fontSize: '0.875rem', color: 'hsl(var(--muted-foreground))' }}>({catItems.length})</span>
                                 </div>
-
-                                {/* Action buttons */}
-                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                
+                                <div style={{ 
+                                    display: 'flex', 
+                                    gap: '0.75rem', 
+                                    overflowX: 'auto', 
+                                    padding: '0 0.25rem 1rem',
+                                    scrollSnapType: 'x mandatory'
+                                }}>
+                                    {catItems.map((item, idx) => (
+                                        <div key={item.id} style={{ scrollSnapAlign: 'start', flexShrink: 0, width: '140px' }}>
+                                            <ItemCard 
+                                                item={item} 
+                                                idx={idx} 
+                                                selectedItems={selectedItems} 
+                                                handleItemClick={handleItemClick} 
+                                                handleDeleteClick={handleDeleteClick} 
+                                                compact
+                                            />
+                                        </div>
+                                    ))}
+                                    
+                                    {/* Add Button at end of row */}
                                     <button
-                                        className="btn btn-outline btn-sm"
                                         style={{
-                                            flex: 1,
-                                            padding: '0.5rem',
-                                            minHeight: 'unset',
-                                            fontSize: '0.6875rem'
+                                            scrollSnapAlign: 'start',
+                                            flexShrink: 0,
+                                            width: '60px',
+                                            height: '140px', // Mathcing reduced card height roughly or centered
+                                            alignSelf: 'center', // Vertically center in the row
+                                            borderRadius: 'var(--radius-lg)',
+                                            border: '2px dashed hsl(var(--border))',
+                                            background: 'transparent',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: 'hsl(var(--muted-foreground))',
+                                            cursor: 'pointer',
+                                            flexDirection: 'column',
+                                            gap: '0.25rem'
+                                        }}
+                                        onClick={() => {
+                                             if (!user) setShowLogin(true)
+                                             else {
+                                                 // Ideally we pre-select the category, but straightforward upload is fine for now
+                                                 singleFileInputRef.current?.click()
+                                             }
                                         }}
                                     >
-                                        <PencilSimple size={14} /> Edit
+                                        <Plus size={24} />
                                     </button>
                                 </div>
                             </div>
-                        </motion.div>
-                    ))}
+                        )
+                    })}
                 </div>
             )}
+
+            {/* View Toggle FAB - Only show when NO items selected */}
+            <AnimatePresence>
+                {selectedItems.length === 0 && (
+                    <motion.button
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0, opacity: 0 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setViewMode(prev => prev === 'grid' ? 'rows' : 'grid')}
+                        style={{
+                            position: 'fixed',
+                            bottom: '90px', // Above nav bar (approx 66px) + 24px margin
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '50%',
+                            background: 'hsl(var(--primary))',
+                            color: 'white',
+                            border: 'none',
+                            boxShadow: 'var(--shadow-lg)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 100,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {viewMode === 'grid' ? <Rows size={24} weight="fill" /> : <SquaresFour size={24} weight="fill" />}
+                    </motion.button>
+                )}
+            </AnimatePresence>
 
             {/* Delete Confirmation Modal */}
             <AnimatePresence>
@@ -639,6 +759,77 @@ export default function MyCloset() {
                         onComplete={() => setShowLogin(false)}
                     />
                 )}
+                
+                {/* Floating Action Bar for Selection (Imagine Me) - Replaces Toggle when items selected */}
+                <AnimatePresence>
+                    {selectedItems.length > 0 && (
+                        <motion.div
+                            initial={{ y: 20, opacity: 0, x: '-50%' }}
+                            animate={{ y: 0, opacity: 1, x: '-50%' }}
+                            exit={{ y: 20, opacity: 0, x: '-50%' }}
+                            style={{
+                                position: 'fixed',
+                                bottom: '90px', // Same position as Toggle FAB
+                                left: '50%',
+                                zIndex: 900,
+                                display: 'flex',
+                                gap: '0.75rem',
+                                background: 'hsl(var(--card))',
+                                padding: '0.75rem 1rem',
+                                borderRadius: 'var(--radius-full)',
+                                boxShadow: 'var(--shadow-xl)',
+                                border: '1px solid hsl(var(--border))',
+                                alignItems: 'center'
+                            }}
+                        >
+                            <button
+                                onClick={() => setSelectedItems([])}
+                                style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: 'hsl(var(--muted-foreground))',
+                                    padding: '0.25rem',
+                                    marginRight: '0.25rem',
+                                    borderRadius: '50%',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                                title="Clear selection"
+                            >
+                                <X size={16} weight="bold" />
+                            </button>
+
+                            <span style={{ fontSize: '0.875rem', fontWeight: 600, marginRight: '0.5rem' }}>
+                                {selectedItems.length} selected
+                            </span>
+                            
+                            <button 
+                                className="btn btn-primary"
+                                onClick={handleImagineMeClick}
+                                disabled={tryOnLoading}
+                                style={{ display: 'flex', items: 'center', gap: '0.5rem' }}
+                            >
+                                {tryOnLoading ? <SpinnerGap className="animate-spin" /> : <Sparkle weight="fill" />}
+                                Imagine Me
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <MissingDataModal 
+                    isOpen={showMissingDataModal} 
+                    onClose={() => setShowMissingDataModal(false)}
+                    onUpdateProfile={() => navigate('/profile')}
+                    onProceed={executeTryOn}
+                />
+
+                <ImagineMeResultModal
+                    isOpen={showImagineModal}
+                    onClose={() => setShowImagineModal(false)}
+                    outfit={imagineResult}
+                />
 
                 {/* Unified Upload Modal */}
                 {isUploadModalOpen && (
@@ -794,7 +985,24 @@ export default function MyCloset() {
                                                     />
                                                 </div>
 
-                                                {/* Category 3 (Type) */}
+                                                {/* Category 1 (For Whom) - Moved here */}
+                                                <div>
+                                                    <label className="label" style={{ fontSize: '0.75rem' }}>For Whom</label>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                                        {EXISTING_CATEGORY1.map(cat => (
+                                                            <button
+                                                                key={cat} type="button"
+                                                                className={`chip chip-outline ${analysisData.category1 === cat ? 'active' : ''}`}
+                                                                onClick={() => updateActiveItemField('category1', cat)}
+                                                                style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '28px' }}
+                                                            >
+                                                                {cat}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Category 3 (Apparel Type) */}
                                                 <div>
                                                     <label className="label" style={{ fontSize: '0.75rem' }}>Apparel Type *</label>
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
@@ -803,7 +1011,11 @@ export default function MyCloset() {
                                                                 key={cat}
                                                                 type="button"
                                                                 className={`chip chip-outline ${analysisData.category3 === cat ? 'active' : ''}`}
-                                                                onClick={() => updateActiveItemField('category3', cat)}
+                                                                onClick={() => {
+                                                                    // Reset Item Type when Apparel Type changes
+                                                                    updateActiveItemField('category3', cat)
+                                                                    updateActiveItemField('category2', '')
+                                                                }}
                                                                 style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
                                                             >
                                                                 {CATEGORY_ICONS[cat] || '👔'} {cat}
@@ -811,6 +1023,34 @@ export default function MyCloset() {
                                                         ))}
                                                     </div>
                                                 </div>
+
+                                                {/* Category 2 (Item Type) - Dynamic based on Apparel Type */}
+                                                {analysisData.category3 && CATEGORY_HIERARCHY[analysisData.category3] && (
+                                                    <div className="animate-in fade-in slide-in-from-top-1">
+                                                        <label className="label" style={{ fontSize: '0.75rem' }}>Item Type *</label>
+                                                        <div style={{
+                                                            display: 'grid',
+                                                            gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+                                                            gap: '0.25rem'
+                                                        }}>
+                                                            {CATEGORY_HIERARCHY[analysisData.category3].map(cat => (
+                                                                <button
+                                                                    key={cat} type="button"
+                                                                    className={`chip chip-outline ${analysisData.category2 === cat ? 'active' : ''}`}
+                                                                    onClick={() => updateActiveItemField('category2', cat)}
+                                                                    style={{ 
+                                                                        fontSize: '0.6875rem', 
+                                                                        padding: '0.25rem 0.5rem', 
+                                                                        minHeight: '28px',
+                                                                        justifyContent: 'center' 
+                                                                    }}
+                                                                >
+                                                                    {cat}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
 
                                                 {/* Color */}
                                                 <div>
@@ -849,60 +1089,22 @@ export default function MyCloset() {
                                                     </select>
                                                 </div>
 
-                                                {/* Detailed Categories (Collapsible or just linear) */}
-                                                <div style={{ padding: '0.75rem', background: 'hsl(var(--muted))', borderRadius: 'var(--radius-md)' }}>
-                                                    <p style={{ fontSize: '0.75rem', fontWeight: 600, margin: '0 0 0.5rem', opacity: 0.7 }}>Additional Details</p>
-
-                                                    {/* Category 1 (For Whom) */}
-                                                    <div style={{ marginBottom: '0.75rem' }}>
-                                                        <label className="label" style={{ fontSize: '0.6875rem' }}>For Whom</label>
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                                            {EXISTING_CATEGORY1.map(cat => (
-                                                                <button
-                                                                    key={cat} type="button"
-                                                                    className={`chip chip-outline ${analysisData.category1 === cat ? 'active' : ''}`}
-                                                                    onClick={() => updateActiveItemField('category1', cat)}
-                                                                    style={{ fontSize: '0.6875rem', padding: '0.125rem 0.5rem', minHeight: '24px' }}
-                                                                >
-                                                                    {cat}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    {/* Category 2 (Item Type) */}
-                                                    <div style={{ marginBottom: '0.75rem' }}>
-                                                        <label className="label" style={{ fontSize: '0.6875rem' }}>Item Type</label>
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                                            {EXISTING_CATEGORY2.map(cat => (
-                                                                <button
-                                                                    key={cat} type="button"
-                                                                    className={`chip chip-outline ${analysisData.category2 === cat ? 'active' : ''}`}
-                                                                    onClick={() => updateActiveItemField('category2', cat)}
-                                                                    style={{ fontSize: '0.6875rem', padding: '0.125rem 0.5rem', minHeight: '24px' }}
-                                                                >
-                                                                    {cat}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    {/* Category 4 (Style) */}
-                                                    <div>
-                                                        <label className="label" style={{ fontSize: '0.6875rem' }}>Style</label>
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                                            {EXISTING_CATEGORY4.map(cat => (
-                                                                <button
-                                                                    key={cat} type="button"
-                                                                    className={`chip chip-outline ${analysisData.category4 === cat ? 'active' : ''}`}
-                                                                    onClick={() => updateActiveItemField('category4', cat)}
-                                                                    style={{ fontSize: '0.6875rem', padding: '0.125rem 0.5rem', minHeight: '24px' }}
-                                                                >
-                                                                    {cat}
-                                                                </button>
-                                                            ))}
-                                                        </div>
+                                                {/* Category 4 (Style) */}
+                                                <div>
+                                                    <label className="label" style={{ fontSize: '0.75rem' }}>Style</label>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                                        {EXISTING_CATEGORY4.map(cat => (
+                                                            <button
+                                                                key={cat} type="button"
+                                                                className={`chip chip-outline ${analysisData.category4 === cat ? 'active' : ''}`}
+                                                                onClick={() => updateActiveItemField('category4', cat)}
+                                                                style={{ fontSize: '0.6875rem', padding: '0.125rem 0.5rem', minHeight: '24px' }}
+                                                            >
+                                                                {cat}
+                                                            </button>
+                                                        ))}
                                                     </div>
                                                 </div>
-
                                             </div>
                                         </>
                                     );
@@ -933,6 +1135,151 @@ export default function MyCloset() {
                 )}
             </AnimatePresence>
         </div>
+    )
+}
+
+function ItemCard({ item, idx, selectedItems, handleItemClick, handleDeleteClick, compact }) {
+    const isSelected = selectedItems.includes(item.id)
+    
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: idx * 0.02 }}
+            style={{
+                background: 'white',
+                borderRadius: 'var(--radius-lg)',
+                overflow: 'hidden',
+                border: isSelected 
+                    ? '2px solid hsl(var(--primary))' 
+                    : '1px solid hsl(var(--border))',
+                position: 'relative',
+                cursor: 'pointer',
+                transform: isSelected ? 'scale(0.98)' : 'scale(1)',
+                transition: 'all 0.2s ease',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                minWidth: compact ? '140px' : 'auto'
+            }}
+            onClick={() => handleItemClick(item)}
+        >
+            {/* Selected Check Mark */}
+            <div style={{
+                position: 'absolute',
+                top: compact ? '0.25rem' : '0.5rem',
+                left: compact ? '0.25rem' : '0.5rem',
+                width: compact ? '20px' : '24px',
+                height: compact ? '20px' : '24px',
+                borderRadius: '50%',
+                background: isSelected ? 'hsl(var(--primary))' : 'rgba(255, 255, 255, 0.7)',
+                border: isSelected ? '1px solid hsl(var(--border))' : '2px solid hsl(var(--muted-foreground))',
+                zIndex: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                transition: 'all 0.2s ease'
+            }}>
+                {isSelected && <Check size={compact ? 12 : 14} weight="bold" />}
+            </div>
+            
+            {/* Image container */}
+            <div style={{ position: 'relative', aspectRatio: '3/4' }}>
+                <img
+                    src={item.image}
+                    alt={item.title || item.category}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                {/* Delete button - top right */}
+                <button
+                    className="btn btn-icon"
+                    style={{
+                        position: 'absolute',
+                        top: compact ? '0.25rem' : '0.5rem',
+                        right: compact ? '0.25rem' : '0.5rem',
+                        background: 'rgba(255, 255, 255, 0.5)',
+                        color: 'hsl(var(--destructive))',
+                        width: compact ? '32px' : '40px',
+                        height: compact ? '32px' : '40px',
+                        borderRadius: 'var(--radius-md)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: 'none',
+                        cursor: 'pointer'
+                    }}
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteClick(item.id)
+                    }}
+                >
+                    <Trash size={compact ? 16 : 20} />
+                </button>
+            </div>
+
+            {/* Info section */}
+            <div style={{ padding: compact ? '0.5rem' : '0.75rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                {/* Title */}
+                <p style={{
+                    fontSize: compact ? '0.6875rem' : '0.75rem',
+                    fontWeight: 600,
+                    margin: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                }}>
+                    {item.title || item.category3 || 'Untitled'}
+                </p>
+
+                {/* Type & Style */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
+                    {item.category3 && (
+                        <span style={{
+                            fontSize: '0.5625rem',
+                            color: 'hsl(var(--muted-foreground))',
+                            background: 'hsl(var(--secondary))',
+                            padding: '0.0625rem 0.25rem',
+                            borderRadius: '3px'
+                        }}>
+                            {item.category3}
+                        </span>
+                    )}
+                    {!compact && item.category4 && (
+                        <span style={{
+                            fontSize: '0.5625rem',
+                            color: 'hsl(var(--muted-foreground))',
+                            background: 'hsl(var(--secondary))',
+                            padding: '0.0625rem 0.25rem',
+                            borderRadius: '3px'
+                        }}>
+                            {item.category4}
+                        </span>
+                    )}
+                </div>
+
+                {/* Action buttons */}
+                {!compact && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto', paddingTop: '0.5rem' }}>
+                        <button
+                            className="btn btn-outline btn-sm"
+                            style={{
+                                flex: 1,
+                                padding: '0.5rem',
+                                minHeight: 'unset',
+                                fontSize: '0.6875rem'
+                            }}
+                            onClick={(e) => {
+                                e.stopPropagation()
+                            }}
+                        >
+                            <PencilSimple size={14} /> Edit
+                        </button>
+                    </div>
+                )}
+            </div>
+        </motion.div>
     )
 }
 
