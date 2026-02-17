@@ -1,5 +1,6 @@
 import { generateGeminiImage } from '../lib/gemini'
-import { uploadImageToStorage as uploadImage } from './storage'
+import { uploadImageToStorage as uploadImage, urlToBase64 } from './storage'
+import { analyzeImageForGeneration } from './openaiAnalysis'
 
 /**
  * Generates a Virtual Try-On image using Gemini Imagen 3
@@ -12,10 +13,32 @@ export async function generateTryOn(userProfile, items, userSelfieUrl) {
     try {
         if (!items || items.length === 0) throw new Error('No items selected for try-on')
 
-        // 1. Construct Prompt
-        const itemDescriptions = items.map(item => 
-            `${item.color || ''} ${item.brand || ''} ${item.title || item.category3 || 'clothing item'}`
-        ).join(', ')
+        // 1. Analyze Items Visually for Better Prompts
+        console.log('Analyzing selected items for visual details...')
+        const enrichedItems = await Promise.all(items.map(async (item) => {
+            let visualDescription = ''
+            try {
+                if (item.image) {
+                    console.log(`Analyzing item: ${item.title || item.category3}...`)
+                    const base64 = await urlToBase64(item.image)
+                    const analysis = await analyzeImageForGeneration(base64)
+                    if (analysis) {
+                        visualDescription = analysis
+                        console.log(`AI Visual Description for ${item.title}:`, visualDescription)
+                    }
+                }
+            } catch (err) {
+                console.warn('Failed to analyze item image:', err)
+            }
+
+            // Fallback to metadata if analysis failed
+            const baseDesc = `${item.color || ''} ${item.brand || ''} ${item.title || item.category3 || 'clothing item'}`
+            
+            return visualDescription ? `(${visualDescription})` : baseDesc
+        }))
+
+        // 1b. Construct Prompt with Enriched Descriptions
+        const itemDescriptions = enrichedItems.join(', ')
 
         const userDescription = [
             userProfile.gender || 'person',

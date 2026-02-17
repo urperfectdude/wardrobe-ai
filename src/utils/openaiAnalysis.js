@@ -222,6 +222,38 @@ export async function generateOutfitDescription(mood, items) {
         return content || "A stylish combination perfect for the occasion."
     } catch (error) {
         console.error('Error generating description:', error)
-        return "This outfit combines compatible colors and styles for a cohesive look."
+    }
+}
+
+// Specialized analysis for Image Generation - focuses on visual details
+export async function analyzeImageForGeneration(imageBase64) {
+    if (!isGeminiConfigured()) return null
+
+    try {
+        const systemPrompt = `You are an expert fashion designer and textile specialist. 
+        Your goal is to describe the clothing item in the image in EXTREME VISUAL DETAIL so that another AI can recreate it exactly.
+        
+        Focus on:
+        - Exact color shades (e.g. "burnt orange" instead of "orange")
+        - Fabric texture and weight (e.g. "chunky knit wool", "sheer silk chiffon", "stiff denim")
+        - Specific patterns (e.g. "large floral print with peonies", "thin vertical pinstripes")
+        - Construction details (e.g. "puff sleeves", "sweetheart neckline", "pleated skirt", "distressed hem")
+        - Fit and silhouette (e.g. "oversized boxy fit", "bodycon tight fit")
+        
+        Do NOT describe the background, the model, or the hanger. Only the garment.
+        Keep the description under 50 words, dense with visual adjectives.`
+
+        const content = await createGeminiVisionCompletion({
+            systemPrompt,
+            userPrompt: 'Describe this clothing item visually for an image generator.',
+            imageBase64,
+            maxTokens: 100,
+            temperature: 0.2
+        })
+
+        return content
+    } catch (error) {
+        console.error('Gemini detailed analysis failed:', error)
+        return null
     }
 }

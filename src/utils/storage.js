@@ -367,6 +367,17 @@ export function imageToBase64(file) {
     })
 }
 
+export async function urlToBase64(url) {
+    try {
+        const response = await fetch(url)
+        const blob = await response.blob()
+        return await imageToBase64(blob)
+    } catch (error) {
+        console.error('Error converting URL to base64:', error)
+        throw error
+    }
+}
+
 export function compressImage(base64, maxDimension = 800) {
     return new Promise((resolve) => {
         const img = new Image()

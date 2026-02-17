@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple, Check, SignIn, Rows, SquaresFour, Plus } from '@phosphor-icons/react'
+import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple, Check, SignIn, Rows, SquaresFour, Plus, MagicWand } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     getWardrobeItems,
@@ -132,6 +132,59 @@ export default function MyCloset() {
     const toggleSelectionMode = () => {
         setSelectionMode(!selectionMode)
         setSelectedItems([])
+    }
+
+    const handleMagicSelect = () => {
+        // Clear current selection
+        let newSelection = []
+        
+        // Helper to get random item from valid items of a category
+        const getRandomItem = (category) => {
+            const validItems = items.filter(i => i.category3 === category || i.category === category)
+            if (validItems.length === 0) return null
+            return validItems[Math.floor(Math.random() * validItems.length)]
+        }
+
+        // 1. Decide base: Dress/FullBody vs Top+Bottom
+        const fullBody = getRandomItem('Full Body')
+        const top = getRandomItem('Top')
+        const bottom = getRandomItem('Bottom')
+
+        // Prefer Full Body if available and random choice favors it (30% chance or if no top+bottom)
+        // Or if we have Top+Bottom, 70% chance to use them.
+        let useFullBody = false
+        if (fullBody && (!top || !bottom || Math.random() < 0.3)) {
+            useFullBody = true
+        }
+
+        if (useFullBody && fullBody) {
+            newSelection.push(fullBody.id)
+        } else if (top && bottom) {
+            newSelection.push(top.id)
+            newSelection.push(bottom.id)
+        } else {
+            // Fallback: if we can't make a standard outfit, just pick anything available from top/bottom/fullbody
+            if (fullBody) newSelection.push(fullBody.id)
+            else if (top) newSelection.push(top.id)
+            else if (bottom) newSelection.push(bottom.id)
+        }
+
+        // 2. Add Footwear (always try)
+        const footwear = getRandomItem('Footwear')
+        if (footwear) newSelection.push(footwear.id)
+
+        // 3. Add Accessories (50% chance)
+        if (Math.random() < 0.5) {
+             const accessory = getRandomItem('Accessories')
+             if (accessory) newSelection.push(accessory.id)
+        }
+        
+       // 4. Update selection
+       if (newSelection.length > 0) {
+           setSelectedItems(newSelection)
+       } else {
+           setToast({ message: 'Not enough items for a magic outfit', visible: true })
+       }
     }
 
     const handleItemClick = (item) => {
@@ -668,14 +721,13 @@ export default function MyCloset() {
                         style={{
                             position: 'fixed',
                             bottom: '90px', // Above nav bar (approx 66px) + 24px margin
-                            left: '50%',
-                            transform: 'translateX(-50%)',
+                            left: '1.5rem', // Left aligned
                             width: '56px',
                             height: '56px',
                             borderRadius: '50%',
-                            background: 'hsl(var(--primary))',
-                            color: 'white',
-                            border: 'none',
+                            background: 'white', 
+                            color: 'black',
+                            border: '1px solid #e5e7eb',
                             boxShadow: 'var(--shadow-lg)',
                             display: 'flex',
                             alignItems: 'center',
@@ -685,6 +737,38 @@ export default function MyCloset() {
                         }}
                     >
                         {viewMode === 'grid' ? <Rows size={24} weight="fill" /> : <SquaresFour size={24} weight="fill" />}
+                    </motion.button>
+                )}
+            </AnimatePresence>
+
+            {/* Magic Wand FAB - Opposite to Toggle, SAME height */}
+            <AnimatePresence>
+                {selectedItems.length === 0 && (
+                    <motion.button
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0, opacity: 0 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handleMagicSelect}
+                        style={{
+                            position: 'fixed',
+                            bottom: '90px', 
+                            right: '1.5rem', // Right aligned
+                            width: '56px',
+                            height: '56px',
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                            color: 'white',
+                            border: 'none',
+                            boxShadow: '0 4px 14px 0 rgba(168, 85, 247, 0.5)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 100,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <MagicWand size={24} weight="fill" />
                     </motion.button>
                 )}
             </AnimatePresence>
