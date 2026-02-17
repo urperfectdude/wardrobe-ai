@@ -8,9 +8,11 @@ import {
 import { supabase } from '../lib/supabase'
 import { getPreferences } from '../utils/storage'
 import PreferencesFlow, { getIncompleteSteps } from './PreferencesFlow'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function OnboardingFlow({ isOpen, onClose, onComplete }) {
     const navigate = useNavigate()
+    const { user, userProfile } = useAuth()
     const [step, setStep] = useState('auth') // 'auth' | 'welcome_back' | 'preferences'
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
@@ -24,6 +26,38 @@ export default function OnboardingFlow({ isOpen, onClose, onComplete }) {
     const [existingUser, setExistingUser] = useState(null)
     const [existingPreferences, setExistingPreferences] = useState(null)
     const [incompleteSteps, setIncompleteSteps] = useState(null)
+
+    // Check for existing session (Fixes Login Loop)
+    useEffect(() => {
+        const checkExistingSession = async () => {
+            if (user && userProfile && step === 'auth') {
+                try {
+                    setLoading(true)
+                    const prefs = await getPreferences()
+                    const incomplete = getIncompleteSteps(prefs, userProfile)
+                    
+                    if (incomplete.length > 0) {
+                        setExistingUser(userProfile)
+                        setExistingPreferences(prefs)
+                        setIncompleteSteps(incomplete)
+                        setStep('preferences')
+                    } else if (userProfile.onboarding_complete) {
+                        // If somehow opened but complete, just close or show welcome
+                         setExistingUser(userProfile)
+                         setStep('welcome_back')
+                    }
+                } catch (err) {
+                    console.error('Error checking existing session:', err)
+                } finally {
+                    setLoading(false)
+                }
+            }
+        }
+        
+        if (isOpen) {
+            checkExistingSession()
+        }
+    }, [user, userProfile, isOpen, step])
 
     const handleGoogleSignIn = async () => {
         setLoading(true)

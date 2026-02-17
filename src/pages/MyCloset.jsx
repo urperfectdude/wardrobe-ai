@@ -161,7 +161,7 @@ export default function MyCloset() {
     // "Imagine Me" Flow
     const handleImagineMeClick = () => {
         // Check profile completeness
-        const isProfileComplete = userProfile?.selfie_url && userProfile?.body_type && userProfile?.skin_color
+        const isProfileComplete = (userProfile?.profile_picture || userProfile?.selfie_url) && userProfile?.body_type && userProfile?.skin_color
         if (!isProfileComplete) {
             setShowMissingDataModal(true)
         } else {
@@ -185,7 +185,7 @@ export default function MyCloset() {
                     hairColor: userProfile?.hair_color
                 },
                 selectedItemObjects,
-                userProfile?.selfie_url
+                userProfile?.profile_picture || userProfile?.selfie_url
             )
             console.log('Try-On Result URL:', tryOnImageUrl)
 

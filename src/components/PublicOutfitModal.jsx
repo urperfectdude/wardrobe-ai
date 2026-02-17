@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Heart, ShareNetwork, Sparkle, User, UserPlus, Check } from '@phosphor-icons/react'
+import { X, Heart, ShareNetwork, Sparkle, User, UserPlus, Check, Globe, Lock } from '@phosphor-icons/react'
 import { useAuth } from '../contexts/AuthContext'
 import { isFollowing, followUser, unfollowUser, hasLikedOutfit, likeOutfit, unlikeOutfit, getLikeCount } from '../utils/social'
+import { updateRecentOutfit } from '../utils/storage'
 import { Link } from 'react-router-dom'
 
 export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
@@ -11,14 +12,17 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
     const [likes, setLikes] = useState(0)
     const [following, setFollowing] = useState(false)
     const [loading, setLoading] = useState(false)
+    const [isPublic, setIsPublic] = useState(outfit?.is_public || false)
 
     useEffect(() => {
         if (isOpen && outfit) {
             loadSocialState()
+            setIsPublic(outfit.is_public || false)
         }
     }, [isOpen, outfit, user])
 
     const loadSocialState = async () => {
+        // ... existing loadSocialState logic ...
         setLoading(true)
         try {
             const [likeCount, userLiked, userFollowing] = await Promise.all([
@@ -35,6 +39,22 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
             setLoading(false)
         }
     }
+
+    const handleTogglePublic = async () => {
+        if (!user || user.id !== outfit.user_id) return
+        
+        const newValue = !isPublic
+        setIsPublic(newValue) // Optimistic update
+        
+        try {
+            await updateRecentOutfit(outfit.id, { is_public: newValue })
+        } catch (error) {
+            console.error('Failed to update public status:', error)
+            setIsPublic(!newValue) // Revert on error
+        }
+    }
+    
+    // ... rest of the file ...
 
     const toggleLike = async () => {
         if (!user) return // Prompt login?
@@ -163,6 +183,40 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                         </div>
 
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            {/* Owner Toggle Public */}
+                            {user && user.id === outfit.user_id && (
+                                <button
+                                    onClick={handleTogglePublic}
+                                    style={{
+                                        height: '32px',
+                                        padding: '0 0.75rem',
+                                        borderRadius: 'var(--radius-full)',
+                                        background: isPublic ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
+                                        border: 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.375rem',
+                                        cursor: 'pointer',
+                                        color: isPublic ? 'white' : 'hsl(var(--muted-foreground))',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {isPublic ? (
+                                        <>
+                                            <Globe size={14} weight="bold" />
+                                            Public
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Lock size={14} weight="bold" />
+                                            Private
+                                        </>
+                                    )}
+                                </button>
+                            )}
+
                             <button
                                 onClick={handleShare}
                                 style={{

@@ -6,13 +6,14 @@ import { saveRecentToSaved } from '../utils/storage'
 export default function ImagineMeResultModal({ isOpen, onClose, outfit }) {
     const [saving, setSaving] = useState(false)
     const [saved, setSaved] = useState(false)
+    const [isPublic, setIsPublic] = useState(false) // Added isPublic state
 
     if (!isOpen || !outfit) return null
 
     const handleSave = async () => {
         setSaving(true)
         try {
-            await saveRecentToSaved(outfit.id)
+            await saveRecentToSaved(outfit.id, isPublic) // Pass isPublic status
             setSaved(true)
             // Auto close after success
             setTimeout(() => {
@@ -143,6 +144,50 @@ export default function ImagineMeResultModal({ isOpen, onClose, outfit }) {
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+
+                            {/* Public Toggle */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                width: '100%',
+                                padding: '0.75rem 1rem',
+                                background: 'hsl(var(--secondary) / 0.5)',
+                                borderRadius: 'var(--radius-lg)',
+                                border: '1px solid hsl(var(--border))'
+                            }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                    <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Make Public</span>
+                                    <span style={{ fontSize: '0.75rem', color: 'hsl(var(--muted-foreground))' }}>Allow others to see this outfit</span>
+                                </div>
+                                <button
+                                    onClick={() => setIsPublic(!isPublic)}
+                                    style={{
+                                        width: '44px',
+                                        height: '24px',
+                                        borderRadius: '12px',
+                                        background: isPublic ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
+                                        position: 'relative',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        transition: 'background 0.2s'
+                                    }}
+                                >
+                                    <motion.div
+                                        animate={{ x: isPublic ? 20 : 2 }}
+                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                        style={{
+                                            width: '20px',
+                                            height: '20px',
+                                            borderRadius: '50%',
+                                            background: 'white',
+                                            position: 'absolute',
+                                            top: '2px',
+                                            boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
+                                        }}
+                                    />
+                                </button>
                             </div>
 
                             {/* Actions */}

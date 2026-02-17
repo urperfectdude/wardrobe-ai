@@ -108,7 +108,7 @@ export default function OutfitPage() {
     const handleImagineMeStart = () => {
         if (!user) return // Should prompt login?
         
-        const isProfileComplete = userProfile?.selfie_url && userProfile?.body_type && userProfile?.skin_color
+        const isProfileComplete = (userProfile?.profile_picture || userProfile?.selfie_url) && userProfile?.body_type && userProfile?.skin_color
         if (!isProfileComplete) {
             setShowMissingModal(true)
         } else {
@@ -130,7 +130,7 @@ export default function OutfitPage() {
                     hairColor: userProfile?.hair_color
                 },
                 outfit.items,
-                userProfile?.selfie_url
+                userProfile?.profile_picture || userProfile?.selfie_url
             )
 
             // Update DB

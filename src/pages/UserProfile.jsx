@@ -103,9 +103,9 @@ export default function UserProfile() {
                     gap: '1rem', marginBottom: '2rem'
                 }}
             >
-                {profile.selfie_url || profile.avatar_url ? (
+                {profile.profile_picture || profile.selfie_url || profile.avatar_url ? (
                     <img
-                        src={profile.selfie_url || profile.avatar_url}
+                        src={profile.profile_picture || profile.selfie_url || profile.avatar_url}
                         alt={profile.name}
                         style={{
                             width: '90px', height: '90px', borderRadius: '50%',

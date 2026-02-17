@@ -12,45 +12,7 @@ import { supabase } from '../lib/supabase'
 // ============================================
 
 // Get session with timeout to prevent hanging
-async function getAuthSession(timeoutMs = 5000) {
-    // First try localStorage for immediate session (faster, non-blocking)
-    try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-        if (supabaseUrl) {
-            const projectRef = supabaseUrl.replace('https://', '').split('.')[0]
-            const key = `sb-${projectRef}-auth-token`
-            const stored = localStorage.getItem(key)
-            if (stored) {
-                const parsed = JSON.parse(stored)
-                if (parsed?.access_token && parsed?.user) {
-                    // Check if token is not expired
-                    const expiresAt = parsed.expires_at
-                    if (!expiresAt || expiresAt * 1000 > Date.now()) {
-                        return parsed
-                    }
-                }
-            }
-        }
-    } catch (e) {
-        // localStorage failed, continue to supabase client
-    }
-
-    // Fallback to supabase client with timeout
-    if (!supabase) return null
-
-    try {
-        const sessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Session timeout')), timeoutMs)
-        )
-
-        const { data } = await Promise.race([sessionPromise, timeoutPromise])
-        return data?.session || null
-    } catch (e) {
-        console.warn('Error getting session:', e)
-        return null
-    }
-}
+import { getAuthSession } from './authUtils'
 
 async function supabaseFetch(table, options = {}) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -95,17 +57,32 @@ async function supabaseFetch(table, options = {}) {
     if (options.method) fetchOptions.method = options.method
     if (options.body) fetchOptions.body = JSON.stringify(options.body)
 
-    const response = await fetch(url, fetchOptions)
-    if (!response.ok) {
-        const errText = await response.text()
-        throw new Error(`Fetch failed (${response.status}): ${errText}`)
+    // Add 15s timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
+    fetchOptions.signal = controller.signal
+
+    try {
+        const response = await fetch(url, fetchOptions)
+        clearTimeout(timeoutId)
+
+        if (!response.ok) {
+            const errText = await response.text()
+            throw new Error(`Fetch failed (${response.status}): ${errText}`)
+        }
+        // Handle 204 No Content (successful upsert with no body)
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+            return null
+        }
+        const text = await response.text()
+        return text ? JSON.parse(text) : null
+    } catch (error) {
+        clearTimeout(timeoutId)
+        if (error.name === 'AbortError') {
+            throw new Error('Request timed out')
+        }
+        throw error
     }
-    // Handle 204 No Content (successful upsert with no body)
-    if (response.status === 204 || response.headers.get('content-length') === '0') {
-        return null
-    }
-    const text = await response.text()
-    return text ? JSON.parse(text) : null
 }
 
 // ============================================
@@ -237,45 +214,70 @@ export async function savePreferences(prefs) {
         const session = await getAuthSession()
         const user = session?.user
         if (!user) {
-            localStorage.setItem('wardrobe_preferences', JSON.stringify(prefs))
-            return prefs
+            // For guest users, merge with existing local storage
+            const existing = JSON.parse(localStorage.getItem('wardrobe_preferences') || '{}')
+            const updated = { ...existing, ...prefs }
+            localStorage.setItem('wardrobe_preferences', JSON.stringify(updated))
+            return updated
         }
 
+        // Build DB object with ONLY the fields present in prefs
         const dbPrefs = {
-            user_id: user.id,
-            thrift_preference: prefs.thriftPreference || 'both',
-            sizes: prefs.sizes || [],
-            preferred_colors: prefs.preferredColors || [],
-            budget: prefs.budget || [500, 5000],
-            fit_type: prefs.fitType || [],
-            preferred_styles: prefs.preferredStyles || [],
-            materials: prefs.materials || [],
-            body_type: prefs.bodyType || '',
-            gender: prefs.gender || '',
             updated_at: new Date().toISOString()
         }
 
-        // Include new profile fields if provided
+        // Map frontend keys to DB columns
+        if (prefs.thriftPreference !== undefined) dbPrefs.shopping_choice = prefs.thriftPreference
+        if (prefs.sizes !== undefined) dbPrefs.sizes = prefs.sizes
+        if (prefs.preferredColors !== undefined) dbPrefs.preferred_colors = prefs.preferredColors
+        if (prefs.budget !== undefined) dbPrefs.budget = prefs.budget
+        if (prefs.fitType !== undefined) dbPrefs.fit_type = prefs.fitType
+        if (prefs.preferredStyles !== undefined) dbPrefs.preferred_styles = prefs.preferredStyles
+        if (prefs.materials !== undefined) dbPrefs.materials = prefs.materials
+        if (prefs.bodyType !== undefined) dbPrefs.body_type = prefs.bodyType
+        if (prefs.gender !== undefined) dbPrefs.gender = prefs.gender
+        
+        // Identity fields
         if (prefs.name !== undefined) dbPrefs.name = prefs.name
         if (prefs.username !== undefined) dbPrefs.username = prefs.username
         if (prefs.bio !== undefined) dbPrefs.bio = prefs.bio
+        
+        // Appearance fields
         if (prefs.skinColor !== undefined) dbPrefs.skin_color = prefs.skinColor
         if (prefs.hairColor !== undefined) dbPrefs.hair_color = prefs.hairColor
         if (prefs.age !== undefined) dbPrefs.age = prefs.age
-        if (prefs.selfieUrl !== undefined) dbPrefs.selfie_url = prefs.selfieUrl
+        if (prefs.onboardingComplete !== undefined) dbPrefs.onboarding_complete = prefs.onboardingComplete
+        
+        // Images: Ensure selfie_url is updated as requested
+        if (prefs.selfieUrl !== undefined) {
+            dbPrefs.selfie_url = prefs.selfieUrl
+        }
+        
+        if (prefs.profilePicture !== undefined) dbPrefs.profile_picture = prefs.profilePicture
         if (prefs.avatarUrl !== undefined) dbPrefs.avatar_url = prefs.avatarUrl
 
-        await supabaseFetch('user_profiles', {
-            method: 'POST',
-            headers: { 'Prefer': 'resolution=merge-duplicates' },
+        // Use PATCH for partial updates
+        console.log('DEBUG: savePreferences payload:', dbPrefs)
+        const result = await supabaseFetch('user_profiles', {
+            method: 'PATCH',
+            query: `user_id=eq.${user.id}`,
+            headers: { 'Prefer': 'return=representation' },
             body: dbPrefs
         })
+        
+        console.log('DEBUG: savePreferences response:', result)
+        if (Array.isArray(result) && result.length > 0) {
+            console.log('DEBUG: DB confirmed selfie_url:', result[0].selfie_url)
+        }
 
         return prefs
     } catch (error) {
         console.error('Error saving preferences:', error)
-        localStorage.setItem('wardrobe_preferences', JSON.stringify(prefs))
-        return prefs
+        // Fallback to local storage if offline/error
+        const existing = JSON.parse(localStorage.getItem('wardrobe_preferences') || '{}')
+        const updated = { ...existing, ...prefs }
+        localStorage.setItem('wardrobe_preferences', JSON.stringify(updated))
+        return updated
     }
 }
 
@@ -299,7 +301,7 @@ export async function getPreferences() {
             if (!profile) return getDefaultPreferences()
 
             return {
-                thriftPreference: profile.thrift_preference || 'both',
+                thriftPreference: profile.shopping_choice || 'both',
                 sizes: profile.sizes || [],
                 preferredColors: profile.preferred_colors || [],
                 budget: profile.budget || [500, 5000],
@@ -315,7 +317,9 @@ export async function getPreferences() {
                 skinColor: profile.skin_color || '',
                 hairColor: profile.hair_color || '',
                 age: profile.age || '',
-                selfieUrl: profile.selfie_url || '',
+                // Map profile_picture from DB to selfieUrl for frontend compatibility
+                selfieUrl: profile.profile_picture || profile.selfie_url || '',
+                profilePicture: profile.profile_picture || profile.selfie_url || '',
                 avatarUrl: profile.avatar_url || ''
             }
         } catch (e) {

@@ -86,7 +86,7 @@ export default function Profile() {
 
 
     const displayName = userProfile?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
-    const avatarUrl = userProfile?.selfie_url || userProfile?.avatar_url || user?.user_metadata?.avatar_url
+    const avatarUrl = userProfile?.profile_picture || userProfile?.selfie_url || userProfile?.avatar_url || user?.user_metadata?.avatar_url
     const initial = displayName?.[0]?.toUpperCase() || 'U'
 
     if (authLoading) {

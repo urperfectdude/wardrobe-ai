@@ -174,24 +174,38 @@ export default function PreferencesFlow({
     const fileInputRef = useRef(null)
 
     // Initialize from existing data
+    // Initialize from existing data
     useEffect(() => {
-        if (existingProfile?.name) setName(existingProfile.name)
-        if (existingProfile?.username) setUsername(existingProfile.username)
-        if (existingProfile?.selfie_url) { setSelfieUrl(existingProfile.selfie_url); setSelfiePreview(existingProfile.selfie_url) }
-        if (existingProfile?.skin_color) setSkinColor(existingProfile.skin_color)
-        if (existingProfile?.hair_color) setHairColor(existingProfile.hair_color)
-        if (existingProfile?.age) setAge(existingProfile.age)
-        if (existingPreferences) {
-            if (existingPreferences.fitType?.length) setFitType(existingPreferences.fitType)
-            if (existingPreferences.sizes?.length) setSizes(existingPreferences.sizes)
-            if (existingPreferences.preferredStyles?.length) setPreferredStyles(existingPreferences.preferredStyles)
-            if (existingPreferences.preferredColors?.length) setPreferredColors(existingPreferences.preferredColors)
-            if (existingPreferences.materials?.length) setMaterials(existingPreferences.materials)
-            if (existingPreferences.gender) setGender(existingPreferences.gender)
-            if (existingPreferences.bodyType) setBodyType(existingPreferences.bodyType)
-            if (existingPreferences.budget) setBudget(existingPreferences.budget)
-            if (existingPreferences.thriftPreference) setThriftPreference(existingPreferences.thriftPreference)
+        // Prefer existingPreferences (normalized & fresh) over existingProfile (raw & potential stale context)
+        const src = existingPreferences || {}
+        const profile = existingProfile || {}
+
+        if (src.name || profile.name) setName(src.name || profile.name)
+        if (src.username || profile.username) setUsername(src.username || profile.username)
+        
+        // Images
+        const pic = src.selfieUrl || src.profilePicture || profile.profile_picture || profile.selfie_url
+        if (pic) { 
+            setSelfieUrl(pic)
+            setSelfiePreview(pic) 
         }
+        
+        // Appearance
+        if (src.skinColor || profile.skin_color) setSkinColor(src.skinColor || profile.skin_color)
+        if (src.hairColor || profile.hair_color) setHairColor(src.hairColor || profile.hair_color)
+        if (src.age || profile.age) setAge(src.age || profile.age)
+        
+        // Shopping Prefs
+        if (src.fitType?.length) setFitType(src.fitType)
+        if (src.sizes?.length) setSizes(src.sizes)
+        if (src.preferredStyles?.length) setPreferredStyles(src.preferredStyles)
+        if (src.preferredColors?.length) setPreferredColors(src.preferredColors)
+        if (src.materials?.length) setMaterials(src.materials)
+        if (src.gender || profile.gender) setGender(src.gender || profile.gender)
+        if (src.bodyType || profile.body_type) setBodyType(src.bodyType || profile.body_type)
+        if (src.budget) setBudget(src.budget)
+        if (src.thriftPreference || profile.shopping_choice) setThriftPreference(src.thriftPreference || profile.shopping_choice)
+
     }, [existingPreferences, existingProfile])
 
     // Build step order
@@ -229,7 +243,15 @@ export default function PreferencesFlow({
                 temperature: 0.1
             })
             const cleaned = result.replace(/```json\n?|```\n?/g, '').trim()
-            const parsed = JSON.parse(cleaned)
+            // Robust extract JSON if extra text exists
+            const jsonStart = cleaned.indexOf('{')
+            const jsonEnd = cleaned.lastIndexOf('}')
+            const jsonString = (jsonStart !== -1 && jsonEnd !== -1) 
+                ? cleaned.substring(jsonStart, jsonEnd + 1) 
+                : cleaned
+            
+            const parsed = JSON.parse(jsonString)
+            console.log('Gemini Analysis Result:', parsed) // Log for debugging
             if (parsed.skin_color) setSkinColor(parsed.skin_color)
             if (parsed.hair_color) setHairColor(parsed.hair_color)
             return parsed
@@ -249,26 +271,35 @@ export default function PreferencesFlow({
                 // Compress and upload
                 const compressed = await compressImage(selfiePreview, 600)
                 const url = await uploadImageToStorage(compressed)
-                setSelfieUrl(url)
+                setSelfieUrl(url) // Update state
                 setUploading(false)
-
-                // Save selfie_url to profile
-                const { data: { user } } = await supabase.auth.getUser()
-                if (user) {
-                    await supabase.from('user_profiles').upsert({
-                        user_id: user.id,
-                        selfie_url: url
-                    })
-                }
 
                 // Trigger AI analysis
-                await analyzeSelfie(compressed)
+                const analysisResult = await analyzeSelfie(compressed)
+                
+                // Explicitly save the FRESH values to DB immediately
+                // We only save the fields relevant to this step (Selfie + Analysis)
+                const prefsToSave = {
+                    selfieUrl: url,
+                    skinColor: analysisResult?.skin_color || skinColor,
+                    hairColor: analysisResult?.hair_color || hairColor
+                }
+                
+                console.log('Saving fresh selfie data:', prefsToSave)
+                await savePreferences(prefsToSave)
+
+                // Manually move to next step (skipping goNext's default saveCurrentStep which has stale state)
+                setCurrentStepIdx(prev => prev + 1)
+                
             } catch (err) {
-                console.error('Selfie upload failed:', err)
+                console.error('Selfie upload/analysis failed:', err)
                 setUploading(false)
+                // Fallback: just move next if it fails
+                setCurrentStepIdx(prev => prev + 1)
             }
+        } else {
+            goNext()
         }
-        goNext()
     }
 
     // Build current prefs object from state
@@ -287,20 +318,33 @@ export default function PreferencesFlow({
     // Validate username format
     const isValidUsername = (u) => /^[a-zA-Z0-9_]{3,20}$/.test(u)
 
-    // Save everything to user_profiles in the background after each step
+    // Save ONLY the fields for the current step
     const saveCurrentStep = async () => {
         try {
-            // savePreferences already upserts into user_profiles with all fields including name, skin, etc.
-            const prefs = buildPrefs()
-            // Ensure we include the identity fields in the prefs object for savePreferences to pick them up
-            prefs.name = name
-            prefs.username = username
-            prefs.skinColor = skinColor
-            prefs.hairColor = hairColor
-            prefs.age = age
-            prefs.selfieUrl = selfieUrl
-            
-            await savePreferences(prefs)
+            const currentStepName = stepOrder[currentStepIdx]
+            const fieldsToSave = STEP_FIELDS[currentStepName]
+
+            if (!fieldsToSave) return
+
+            // Construct partial prefs object
+            const allPrefs = buildPrefs()
+            // Add identity/appearance fields manually since buildPrefs only does Shopping prefs
+            allPrefs.name = name
+            allPrefs.username = username
+            allPrefs.skinColor = skinColor
+            allPrefs.hairColor = hairColor
+            allPrefs.age = age
+            allPrefs.selfieUrl = selfieUrl
+
+            const partialPrefs = {}
+            fieldsToSave.forEach(field => {
+                if (allPrefs[field] !== undefined) {
+                    partialPrefs[field] = allPrefs[field]
+                }
+            })
+
+            console.log(`Saving step ${currentStepName}:`, partialPrefs)
+            await savePreferences(partialPrefs)
         } catch (err) {
             console.error('Background save failed:', err)
         }
@@ -332,31 +376,46 @@ export default function PreferencesFlow({
     }
 
     const handleFinalSave = async () => {
+        console.log('handleFinalSave: Starting')
         setLoading(true)
+        
         try {
-            const prefs = buildPrefs()
-            prefs.name = name
-            prefs.username = username
-            prefs.skinColor = skinColor
-            prefs.hairColor = hairColor
-            prefs.age = age
-            prefs.selfieUrl = selfieUrl
-            
-            // We need to pass a flag or handle onboarding_complete separately
-            // Since savePreferences is generic, we'll do a focused update for completion
-            await savePreferences(prefs)
+            // Create a timeout promise that rejects after 15 seconds
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Operation timed out. Please check your internet connection and try again.')), 15000)
+            })
 
-            const { data: { user } } = await supabase.auth.getUser()
-            if (user) {
-                await supabase.from('user_profiles').update({ 
-                    onboarding_complete: true,
-                    updated_at: new Date().toISOString()
-                }).eq('user_id', user.id)
+            // The actual save operation
+            const saveOperation = async () => {
+                // Save the final steps data (Shopping Preferences + Budget etc)
+                // We assume previous steps saved their data incrementally
+                // But to be safe, we can save all "Shopping" preferences now
+                // ALSO mark onboarding as complete here to avoid a second DB call
+                const prefs = buildPrefs()
+                prefs.onboardingComplete = true 
+                
+                console.log('handleFinalSave: Saving final prefs', prefs)
+                
+                await savePreferences(prefs)
+                console.log('handleFinalSave: Preferences saved')
+                
+                return true
             }
-            goNext() // goes to DONE step
+
+            // Race the save operation against the timeout
+            const user = await Promise.race([saveOperation(), timeoutPromise])
+            
+            console.log('handleFinalSave: Done, moving next')
+            
+            console.log('handleFinalSave: Done, moving next')
+            
+            // User requested to close the flow immediately after saving
+            handleComplete()
         } catch (err) {
             console.error('Error saving preferences:', err)
-            goNext()
+            alert(`Error saving: ${err.message}`)
+            // Optional: still allow proceeding if it's just a network timeout on the final status update
+            // goNext() 
         } finally {
             setLoading(false)
         }
@@ -927,26 +986,42 @@ export default function PreferencesFlow({
                         </motion.div>
                     )}
 
-                    {/* ─── DONE ─── */}
+                    {/* ─── STEP: DONE ─── */}
                     {currentStep === STEPS.DONE && (
-                        <motion.div key="done" variants={slideVariants} initial="enter" animate="center" exit="exit" className="prefs-flow-step prefs-flow-done">
-                            <div className="prefs-flow-done-content">
+                        <motion.div key="done" variants={slideVariants} initial="enter" animate="center" exit="exit" className="prefs-flow-step">
+                            <div className="prefs-flow-step-body" style={{ alignItems: 'center', textAlign: 'center' }}>
                                 <motion.div
-                                    className="prefs-flow-done-emoji"
-                                    initial={{ scale: 0, rotate: -180 }}
-                                    animate={{ scale: 1, rotate: 0 }}
-                                    transition={{ type: 'spring', stiffness: 200, damping: 10 }}
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ type: 'spring', damping: 12 }}
+                                    style={{ 
+                                        width: '80px', height: '80px', borderRadius: '50%', 
+                                        background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        marginBottom: '1.5rem', fontSize: '2.5rem'
+                                    }}
                                 >
-                                    ✨
+                                    🎉
                                 </motion.div>
-                                <h1 className="prefs-flow-done-title">
-                                    {mode === 'edit' ? 'preferences updated!' : `u're all set${name ? `, ${name.split(' ')[0]}` : ''}!`}
-                                </h1>
-                                <p className="prefs-flow-done-subtitle">
-                                    {mode === 'edit' ? 'your style profile is looking fire 🔥' : 'time to build ur drip 💧'}
-                                </p>
-                                <button className="prefs-flow-continue-btn prefs-flow-final-cta" onClick={handleComplete}>
-                                    {mode === 'edit' ? 'done' : "let's get styled"} <ArrowRight size={16} />
+                                <h1 className="prefs-flow-title">you're all set!</h1>
+                                <p className="prefs-flow-subtitle">we've customized everything just for u.</p>
+                                
+                                <div style={{ 
+                                    marginTop: '2rem', padding: '1.5rem', 
+                                    background: 'hsl(var(--muted) / 0.5)', borderRadius: 'var(--radius-lg)',
+                                    maxWidth: '300px', width: '100%'
+                                }}>
+                                    <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>Next steps:</p>
+                                    <ul style={{ textAlign: 'left', fontSize: '0.85rem', paddingLeft: '1.5rem', color: 'hsl(var(--muted-foreground))' }}>
+                                        <li style={{ marginBottom: '0.25rem' }}>Upload your digital closet</li>
+                                        <li style={{ marginBottom: '0.25rem' }}>Generate outfits with AI</li>
+                                        <li>Share your fits with the world</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div className="prefs-flow-actions">
+                                <button className="prefs-flow-continue-btn" onClick={handleComplete}>
+                                    start styling <Sparkles size={16} />
                                 </button>
                             </div>
                         </motion.div>

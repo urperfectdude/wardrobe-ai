@@ -1,47 +1,8 @@
 // Social features: Follow/Unfollow, Like/Unlike
 import { supabase } from '../lib/supabase'
+import { getAuthSession } from './authUtils'
 
 // ─── FOLLOW / UNFOLLOW ───
-
-// Helper to get session with absolute reliability (localStorage fallback + timeout)
-// This matches the logic in storage.js/AuthContext.js to ensure social features 
-// have access to the same session state as the rest of the app.
-async function getSessionWithTimeout(timeoutMs = 5000) {
-    // 1. First try localStorage for immediate session (bypasses Supabase client hang)
-    try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-        if (supabaseUrl) {
-            const projectRef = supabaseUrl.replace('https://', '').split('.')[0]
-            const key = `sb-${projectRef}-auth-token`
-            const stored = localStorage.getItem(key)
-            if (stored) {
-                const parsed = JSON.parse(stored)
-                if (parsed?.access_token && parsed?.user) {
-                    // Check if token is not expired (buffer of 60s)
-                    const expiresAt = parsed.expires_at
-                    if (!expiresAt || expiresAt * 1000 > Date.now() + 60000) {
-                        return parsed
-                    }
-                }
-            }
-        }
-    } catch (e) {
-        // localStorage failed, continue to supabase client
-    }
-
-    // 2. Fallback to supabase client with timeout
-    try {
-        const sessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Session timeout')), timeoutMs)
-        )
-        const { data } = await Promise.race([sessionPromise, timeoutPromise])
-        return data?.session || null
-    } catch (e) {
-        console.warn('Session fetch failed:', e)
-        return null
-    }
-}
 
 // ─── FOLLOW / UNFOLLOW ───
 
@@ -130,13 +91,16 @@ export async function likeOutfit(outfitId) {
         if (!session?.user) throw new Error('Not authenticated')
         const user = session.user
 
-        const { data, error } = await supabase
+    const { data, error } = await supabase
             .from('outfit_likes')
             .insert({ user_id: user.id, outfit_id: outfitId })
             .select()
             .single()
 
-        if (error) throw error
+        if (error) {
+            console.error('Supabase like error:', error)
+            throw error
+        }
         return data
     } catch (error) {
         console.error('Error liking outfit:', error)

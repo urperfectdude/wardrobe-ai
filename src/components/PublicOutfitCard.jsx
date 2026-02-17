@@ -58,9 +58,12 @@ export default function PublicOutfitCard({ outfit, onClick, onMoodSelect }) {
 
     const handleLike = async (e) => {
         e.stopPropagation()
-        console.log('Follow/Like: Clicked')
+        console.log('Follow/Like: Clicked', { user: !!user, outfitId: outfit.id })
+        
         if (!user) {
             console.log('Follow/Like: No user logged in')
+            // TODO: Trigger login modal or alert
+            alert('Please log in to like outfits')
             return 
         }
         if (likeLoading) {
@@ -71,19 +74,21 @@ export default function PublicOutfitCard({ outfit, onClick, onMoodSelect }) {
         setLikeLoading(true)
         try {
             if (liked) {
-                console.log('Follow/Like: Unliking outfit', outfit.id)
+                console.log('Follow/Like: Attempting unlike', outfit.id)
                 await unlikeOutfit(outfit.id)
+                console.log('Follow/Like: Unlike successful')
                 setLikes(p => Math.max(0, p - 1))
                 setLiked(false)
             } else {
-                console.log('Follow/Like: Liking outfit', outfit.id)
+                console.log('Follow/Like: Attempting like', outfit.id)
                 await likeOutfit(outfit.id)
+                console.log('Follow/Like: Like successful')
                 setLikes(p => p + 1)
                 setLiked(true)
             }
         } catch (error) {
             console.error('Like action failed:', error)
-            alert(`Like failed: ${error.message}`)
+            alert(`Like failed: ${error.message || 'Unknown error'}`)
         } finally {
             setLikeLoading(false)
         }
@@ -129,8 +134,8 @@ export default function PublicOutfitCard({ outfit, onClick, onMoodSelect }) {
                         onClick={(e) => { e.stopPropagation(); if (owner.username) window.location.href = `/user/${owner.username}` }}
                         style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: owner.username ? 'pointer' : 'default' }}
                     >
-                        {(owner.selfie_url || owner.avatar_url) ? (
-                            <img src={owner.selfie_url || owner.avatar_url} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                        {(owner.profile_picture || owner.selfie_url || owner.avatar_url) ? (
+                            <img src={owner.profile_picture || owner.selfie_url || owner.avatar_url} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
                         ) : (
                             <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'hsl(var(--muted))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 600, color: 'hsl(var(--muted-foreground))' }}>
                                 {(owner.name || '?')[0].toUpperCase()}
