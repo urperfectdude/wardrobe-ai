@@ -37,8 +37,25 @@ export async function generateTryOn(userProfile, items, userSelfieUrl) {
             return visualDescription ? `(${visualDescription})` : baseDesc
         }))
 
-        // 1b. Construct Prompt with Enriched Descriptions
-        const itemDescriptions = enrichedItems.join(', ')
+        // 1b. Categorize items by apparel type for a structured prompt
+        const categorizedItems = {}
+        items.forEach((item, idx) => {
+            const type = (item.category3 || 'Other').toLowerCase()
+            if (!categorizedItems[type]) categorizedItems[type] = []
+            categorizedItems[type].push(enrichedItems[idx])
+        })
+
+        // Build structured outfit description
+        const outfitParts = []
+        const typeLabels = {
+            top: 'Top/Shirt', bottom: 'Pants/Bottom', 'full body': 'Dress/Full-body',
+            outerwear: 'Jacket/Outerwear', footwear: 'Shoes', accessories: 'Accessory'
+        }
+        for (const [type, descs] of Object.entries(categorizedItems)) {
+            const label = typeLabels[type] || type
+            outfitParts.push(`${label}: ${descs.join(' and ')}`)
+        }
+        const outfitDescription = outfitParts.join('. ')
 
         const userDescription = [
             userProfile.gender || 'person',
@@ -48,21 +65,18 @@ export async function generateTryOn(userProfile, items, userSelfieUrl) {
             userProfile.hairColor ? `${userProfile.hairColor} hair` : ''
         ].filter(Boolean).join(', ')
 
-        // Incorporate Selfie URL if available
-        let prompt = ''
-        if (userSelfieUrl) {
-            prompt = `A realistic full-body photo of a person who looks like the user in this selfie: ${userSelfieUrl}. 
-            The person is wearing the following outfit: ${itemDescriptions}.
-            The person has the following characteristics: ${userDescription}.
-            The subject is standing in a neutral, stylish pose against a clean, modern background.
-            High quality, photorealistic, fashion photography style.
-            Ensure the clothing fit and drape matches the body type described.`
-        } else {
-             prompt = `A realistic full-body photo of a ${userDescription || 'model'} wearing the following outfit: ${itemDescriptions}. 
-            The subject is standing in a neutral, stylish pose against a clean, modern background. 
-            High quality, photorealistic, fashion photography style. 
-            Ensure the clothing fit and drape matches the body type described.`
-        }
+        // Build a clear, single-model prompt
+        const prompt = `Fashion editorial photograph of exactly ONE single ${userDescription || 'model'} wearing a complete outfit.
+
+The outfit consists of: ${outfitDescription}.
+
+All clothing items are worn together as ONE coordinated look on the SAME single person. 
+The model is standing in a relaxed, confident pose against a clean solid white or light gray background.
+Full-body shot from head to toe, centered in frame.
+High-end fashion photography, soft studio lighting, photorealistic, magazine editorial style.
+The clothing should drape naturally on the body, fitting realistically.
+
+IMPORTANT: Show only ONE person. Do NOT show multiple models, collages, side-by-side views, or before-and-after comparisons. No split images. Just one single full-body photo of one person wearing all the items together.`
 
         console.log('Generating Try-On with prompt:', prompt)
 
