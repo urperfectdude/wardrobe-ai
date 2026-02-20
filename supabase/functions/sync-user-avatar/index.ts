@@ -1,9 +1,6 @@
-import { serve } from "std/http/server.ts"
 import { createClient } from "@supabase/supabase-js"
 
-console.log("Hello from sync-user-avatar!")
-
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   try {
     const { record } = await req.json()
     
