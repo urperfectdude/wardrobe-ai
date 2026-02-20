@@ -644,8 +644,14 @@ export default function MyCloset() {
 
             {/* Rows View */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '5rem' }}>
-                {EXISTING_CATEGORY3.map(cat => {
-                    const catItems = items.filter(i => i.category === cat || i.category3 === cat)
+                {[...EXISTING_CATEGORY3]
+                    .sort((a, b) => {
+                        const countA = items.filter(i => i.category === a || i.category3 === a).length;
+                        const countB = items.filter(i => i.category === b || i.category3 === b).length;
+                        return countB - countA;
+                    })
+                    .map(cat => {
+                        const catItems = items.filter(i => i.category === cat || i.category3 === cat)
                     return (
                         <div key={cat} style={{ overflow: 'hidden' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', paddingLeft: '0.25rem' }}>
@@ -678,10 +684,10 @@ export default function MyCloset() {
                                     style={{
                                         scrollSnapAlign: 'start',
                                         flexShrink: 0,
-                                        width: '60px',
-                                        height: '140px',
+                                        width: '40px',
+                                        height: '40px',
                                         alignSelf: 'center',
-                                        borderRadius: 'var(--radius-lg)',
+                                        borderRadius: '50%',
                                         border: '2px dashed hsl(var(--border))',
                                         background: 'transparent',
                                         display: 'flex',
@@ -689,8 +695,6 @@ export default function MyCloset() {
                                         justifyContent: 'center',
                                         color: 'hsl(var(--muted-foreground))',
                                         cursor: 'pointer',
-                                        flexDirection: 'column',
-                                        gap: '0.25rem'
                                     }}
                                     onClick={() => {
                                          if (!user) setShowLogin(true)
