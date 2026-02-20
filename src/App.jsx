@@ -1,4 +1,6 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+import { trackPageVisit } from './utils/analytics'
 import { AuthProvider } from './contexts/AuthContext'
 import OnboardingCheck from './components/OnboardingCheck'
 import Navbar from './components/Navbar'
@@ -10,6 +12,12 @@ import UserProfile from './pages/UserProfile'
 import OutfitPage from './pages/OutfitPage'
 
 function App() {
+    const location = useLocation()
+
+    useEffect(() => {
+        trackPageVisit(location.pathname)
+    }, [location])
+
     return (
         <AuthProvider>
             <OnboardingCheck />

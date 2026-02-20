@@ -17,6 +17,7 @@ import { generateTryOn } from '../utils/generateTryOn'
 import { useAuth } from '../contexts/AuthContext'
 import OnboardingFlow from '../components/OnboardingFlow'
 import ImagineMeResultModal from '../components/ImagineMeResultModal'
+import { trackUserAction } from '../utils/analytics'
 import {
     analyzeClothingImage,
     EXISTING_COLORS,
@@ -134,6 +135,7 @@ export default function MyCloset() {
 
     // Open upload modal in edit mode with existing item data
     const handleEditClick = (item) => {
+        trackUserAction('edit_item_open', { item_id: item.id })
         setEditingItem(item)
         setUploadQueue([{
             id: item.id,
@@ -162,6 +164,7 @@ export default function MyCloset() {
 
 
     const handleMagicSelect = () => {
+        trackUserAction('suggest_outfit', { mood: selectedMood })
         // Clear current selection
         let newSelection = []
         
@@ -240,6 +243,7 @@ export default function MyCloset() {
 
     // "Imagine Me" Flow
     const handleImagineMeClick = async () => {
+        trackUserAction('imagine_me_click', { selected_count: selectedItems.length })
         setTryOnLoading(true)
         try {
             // Refresh profile from DB to get latest data
@@ -485,6 +489,7 @@ export default function MyCloset() {
 
     const handleDeleteConfirm = useCallback(async () => {
         if (!deleteConfirm) return
+        trackUserAction('delete_item_confirm', { item_id: deleteConfirm })
         try {
             await deleteWardrobeItem(deleteConfirm)
             setItems(prev => prev.filter(item => item.id !== deleteConfirm))
@@ -1322,7 +1327,13 @@ export default function MyCloset() {
                                     {saving ? (
                                         <><SpinnerGap size={16} className="animate-spin" /> Saving...</>
                                     ) : (
-                                        editingItem ? 'Save Changes' : (uploadQueue.length > 1 ? `Save All (${uploadQueue.length})` : 'Add to Closet')
+                                        editingItem ? (
+                                            trackUserAction('edit_item_save', { item_id: editingItem.id }),
+                                            'Save Changes'
+                                        ) : (
+                                            trackUserAction('add_item_save', { upload_count: uploadQueue.length }),
+                                            uploadQueue.length > 1 ? `Save All (${uploadQueue.length})` : 'Add to Closet'
+                                        )
                                     )}
                                 </button>
                             </div>
@@ -1431,7 +1442,7 @@ function ItemCard({ item, idx, selectedItems, handleItemClick, handleEditClick, 
 
                 {/* Type & Style */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
-                    {item.category3 && (
+                    {item.category2 && (
                         <span style={{
                             fontSize: '0.5625rem',
                             color: 'hsl(var(--muted-foreground))',
@@ -1439,7 +1450,7 @@ function ItemCard({ item, idx, selectedItems, handleItemClick, handleEditClick, 
                             padding: '0.0625rem 0.25rem',
                             borderRadius: '3px'
                         }}>
-                            {item.category3}
+                            {item.category2}
                         </span>
                     )}
                     {!compact && item.category4 && (
