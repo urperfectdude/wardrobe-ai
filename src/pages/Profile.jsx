@@ -384,6 +384,24 @@ export default function Profile() {
                                         scrollbarWidth: 'none', // Hide scrollbar
                                         paddingRight: '140px' // Increased space for fade/button
                                     }}>
+                                        {outfit.imagine_on_avatar && (
+                                            <div style={{
+                                                position: 'relative',
+                                                height: '100%',
+                                                aspectRatio: '1/1',
+                                                borderRadius: 'var(--radius-lg)',
+                                                overflow: 'hidden',
+                                                border: '2px solid hsl(var(--accent))',
+                                                flexShrink: 0,
+                                                background: '#000'
+                                            }}>
+                                                <img
+                                                    src={outfit.imagine_on_avatar}
+                                                    alt="Imagine Me Result"
+                                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                                />
+                                            </div>
+                                        )}
                                         {outfit.items.map((item, i) => (
                                             <div key={i} style={{
                                                 position: 'relative',
@@ -465,6 +483,24 @@ export default function Profile() {
                                         scrollbarWidth: 'none', // Hide scrollbar
                                         paddingRight: '140px' // Increased space for fade/button
                                     }}>
+                                        {outfit.imagine_on_avatar && (
+                                            <div style={{
+                                                position: 'relative',
+                                                height: '100%',
+                                                aspectRatio: '1/1',
+                                                borderRadius: 'var(--radius-lg)',
+                                                overflow: 'hidden',
+                                                border: '2px solid hsl(var(--accent))',
+                                                flexShrink: 0,
+                                                background: '#000'
+                                            }}>
+                                                <img
+                                                    src={outfit.imagine_on_avatar}
+                                                    alt="Imagine Me Result"
+                                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                                />
+                                            </div>
+                                        )}
                                         {outfit.items.map((item, i) => (
                                             <div key={i} style={{
                                                 position: 'relative',

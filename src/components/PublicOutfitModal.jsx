@@ -317,6 +317,28 @@ export default function PublicOutfitModal({ isOpen, onClose, outfit }) {
                         </div>
                     </div>
 
+                    {/* Imagine Me Result - Prominent View */}
+                    {outfit.imagine_on_avatar && (
+                        <div style={{ 
+                            marginBottom: '1.5rem',
+                            width: '100%',
+                            maxWidth: '320px',
+                            margin: '0 auto 1.5rem',
+                            aspectRatio: '3/4',
+                            background: '#000',
+                            borderRadius: 'var(--radius-xl)',
+                            overflow: 'hidden',
+                            boxShadow: 'var(--shadow-lg)',
+                            border: '1px solid hsl(var(--border))'
+                        }}>
+                            <img 
+                                src={outfit.imagine_on_avatar} 
+                                alt="Imagine Me Result" 
+                                style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                            />
+                        </div>
+                    )}
+
                     {/* Items Grid */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
                         {outfit.items.map((item, idx) => (
