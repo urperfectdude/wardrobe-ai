@@ -17,22 +17,48 @@ export function AuthProvider({ children }) {
     const [session, setSession] = useState(null)
     const [loading, setLoading] = useState(true)
 
-    // Fetch user profile from database
+    // Fetch user profile using direct REST API (avoids Supabase client session hangs)
     const fetchProfile = async (userId) => {
         if (!userId) return null
         try {
-            const { data, error } = await supabase
-                .from('user_profiles')
-                .select('*')
-                .eq('user_id', userId)
-                .single()
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+            if (!supabaseUrl || !supabaseKey) return null
 
-            if (error && error.code !== 'PGRST116') {
-                console.error('Error fetching profile:', error)
+            // Get auth token from localStorage
+            const projectRef = supabaseUrl.replace('https://', '').split('.')[0]
+            const stored = localStorage.getItem(`sb-${projectRef}-auth-token`)
+            const token = stored ? JSON.parse(stored)?.access_token : supabaseKey
+
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+            const response = await fetch(
+                `${supabaseUrl}/rest/v1/user_profiles?user_id=eq.${userId}&select=*`,
+                {
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${token || supabaseKey}`,
+                        'Accept': 'application/vnd.pgrst.object+json'
+                    },
+                    signal: controller.signal
+                }
+            )
+            clearTimeout(timeoutId)
+
+            if (!response.ok) {
+                if (response.status === 406) return null // No rows found
+                console.error('Profile fetch error:', response.status)
+                return null
             }
-            return data
+            const data = await response.json()
+            return data || null
         } catch (err) {
-            console.error('Error fetching profile:', err)
+            if (err.name === 'AbortError') {
+                console.warn('Profile fetch timed out')
+            } else {
+                console.error('Error fetching profile:', err)
+            }
             return null
         }
     }
@@ -41,7 +67,9 @@ export function AuthProvider({ children }) {
         if (user?.id) {
             const profile = await fetchProfile(user.id)
             setUserProfile(profile)
+            return profile
         }
+        return null
     }
 
     useEffect(() => {

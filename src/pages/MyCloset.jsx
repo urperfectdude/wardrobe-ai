@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple, Check, SignIn, Rows, SquaresFour, Plus, MagicWand } from '@phosphor-icons/react'
+import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple, Check, SignIn, Plus, MagicWand } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     getWardrobeItems,
     saveWardrobeItem,
     deleteWardrobeItem,
+    updateWardrobeItem,
     imageToBase64,
     compressImage,
     saveRecentOutfit,
@@ -59,7 +60,7 @@ const CATEGORY_ICONS = {
 }
 
 export default function MyCloset() {
-    const { user, userProfile } = useAuth()
+    const { user, userProfile, refreshProfile } = useAuth()
     const navigate = useNavigate()
 
     // Selection & Try-On State
@@ -67,6 +68,8 @@ export default function MyCloset() {
     const [showMissingDataModal, setShowMissingDataModal] = useState(false)
     const [tryOnLoading, setTryOnLoading] = useState(false)
     const [toast, setToast] = useState({ message: '', visible: false })
+    const [selectedMood, setSelectedMood] = useState('Casual')
+    const [showMoodDropdown, setShowMoodDropdown] = useState(false)
 
     // Auto-hide toast
     useEffect(() => {
@@ -80,8 +83,7 @@ export default function MyCloset() {
     const [items, setItems] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
-    const [filterCategory, setFilterCategory] = useState('all')
-    const [viewMode, setViewMode] = useState('grid') // 'grid' | 'rows'
+
     const [deleteConfirm, setDeleteConfirm] = useState(null)
     const [showLogin, setShowLogin] = useState(false)
     const [dragOver, setDragOver] = useState(false)
@@ -95,6 +97,7 @@ export default function MyCloset() {
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
     const [uploadQueue, setUploadQueue] = useState([]) // Array of {id, file, image, analysis, status: 'analyzing'|'done'|'error', error: null}
     const [activeUploadTab, setActiveUploadTab] = useState(0)
+    const [editingItem, setEditingItem] = useState(null) // When set, modal is in edit mode
 
     // Imagine Me Result State
     const [showImagineModal, setShowImagineModal] = useState(false)
@@ -126,13 +129,37 @@ export default function MyCloset() {
         setUploadQueue([])
         setActiveUploadTab(0)
         setSaveError(null)
+        setEditingItem(null)
     }
 
-    // Toggle Selection Mode
-    const toggleSelectionMode = () => {
-        setSelectionMode(!selectionMode)
-        setSelectedItems([])
+    // Open upload modal in edit mode with existing item data
+    const handleEditClick = (item) => {
+        setEditingItem(item)
+        setUploadQueue([{
+            id: item.id,
+            file: null,
+            image: item.image,
+            status: 'done',
+            error: null,
+            analysis: {
+                title: item.title || '',
+                description: item.description || '',
+                ai_description: item.ai_description || '',
+                brand: item.brand || '',
+                color: item.color || '',
+                category: item.category || '',
+                category1: item.category1 || '',
+                category2: item.category2 || '',
+                category3: item.category3 || '',
+                category4: item.category4 || '',
+                issue: item.issue || ''
+            }
+        }])
+        setActiveUploadTab(0)
+        setIsUploadModalOpen(true)
     }
+
+
 
     const handleMagicSelect = () => {
         // Clear current selection
@@ -212,13 +239,28 @@ export default function MyCloset() {
     }
 
     // "Imagine Me" Flow
-    const handleImagineMeClick = () => {
-        // Check profile completeness
-        const isProfileComplete = (userProfile?.profile_picture || userProfile?.selfie_url) && userProfile?.body_type && userProfile?.skin_color
-        if (!isProfileComplete) {
-            setShowMissingDataModal(true)
-        } else {
-            executeTryOn()
+    const handleImagineMeClick = async () => {
+        setTryOnLoading(true)
+        try {
+            // Refresh profile from DB to get latest data
+            const freshProfile = await refreshProfile() || userProfile
+            const isProfileComplete = (freshProfile?.profile_picture || freshProfile?.selfie_url) && freshProfile?.body_type && freshProfile?.skin_color
+            if (!isProfileComplete) {
+                setTryOnLoading(false)
+                setShowMissingDataModal(true)
+            } else {
+                executeTryOn()
+            }
+        } catch (e) {
+            console.warn('Profile check failed:', e)
+            setTryOnLoading(false)
+            // Fall back to cached profile check
+            const isProfileComplete = (userProfile?.profile_picture || userProfile?.selfie_url) && userProfile?.body_type && userProfile?.skin_color
+            if (!isProfileComplete) {
+                setShowMissingDataModal(true)
+            } else {
+                executeTryOn()
+            }
         }
     }
 
@@ -271,7 +313,6 @@ export default function MyCloset() {
             alert(`Failed to generate try-on: ${error.message}`)
         } finally {
             setTryOnLoading(false)
-            setSelectionMode(false)
             setSelectedItems([])
         }
     }
@@ -346,28 +387,17 @@ export default function MyCloset() {
     }
 
     const handleSave = useCallback(async () => {
-        // Filter for items that are either done or have manual input (if we allow saving errors/manual overrides)
-        // For now, let's require status 'done' OR 'error' (if manual fix allowed)
-        // Actually, let's just save everything that has an image and basic fields
-
-        // Validation check for the ACTIVE item first (common UI pattern)
-        // detailed check for ALL items
         const itemsToSave = uploadQueue.filter(item => item.image)
-
         if (itemsToSave.length === 0) return
 
         // Validate all items have category/color
         const missingFields = itemsToSave.filter(item => !item.analysis.category3 || !item.analysis.color)
         if (missingFields.length > 0) {
-            // If the ACTIVE item is one of them, show error
             const currentItem = uploadQueue[activeUploadTab]
             if (!currentItem.analysis.category3 || !currentItem.analysis.color) {
                 setSaveError('Please select a Category and Color for this item.')
                 return
             }
-            // If active is fine but others are missing, maybe warn? 
-            // For now, let's just try to save valid ones or block?
-            // User requested "popup alignment issues fix", so let's be strict but clear.
             alert(`Please select Category and Color for all ${missingFields.length} items before saving.`)
             return
         }
@@ -376,6 +406,26 @@ export default function MyCloset() {
         setSaveError(null)
 
         try {
+            // Edit mode: update existing item
+            if (editingItem) {
+                const item = itemsToSave[0]
+                const updated = await updateWardrobeItem(editingItem.id, {
+                    title: item.analysis.title,
+                    description: item.analysis.description,
+                    brand: item.analysis.brand,
+                    color: item.analysis.color,
+                    category: item.analysis.category3,
+                    category1: item.analysis.category1,
+                    category2: item.analysis.category2,
+                    category3: item.analysis.category3,
+                    category4: item.analysis.category4
+                })
+                setItems(prev => prev.map(i => i.id === editingItem.id ? updated : i))
+                resetForm()
+                return
+            }
+
+            // Add mode: save new items
             const results = await Promise.allSettled(itemsToSave.map(async (item) => {
                 return await saveWardrobeItem({
                     image: item.image,
@@ -406,8 +456,6 @@ export default function MyCloset() {
             if (failedItems.length > 0) {
                 console.error('Some items failed to save:', failedItems)
                 alert(`Failed to save ${failedItems.length} items. Please try again.`)
-                // Keep modal open, maybe filter queue to only failed ones?
-                // For simplicity/refactor safety: don't close if any failed.
             } else {
                 resetForm()
             }
@@ -418,7 +466,7 @@ export default function MyCloset() {
         } finally {
             setSaving(false)
         }
-    }, [uploadQueue, activeUploadTab])
+    }, [uploadQueue, activeUploadTab, editingItem])
 
     const handleDrop = useCallback((e) => {
         e.preventDefault()
@@ -448,9 +496,6 @@ export default function MyCloset() {
         }
     }, [deleteConfirm])
 
-    const filteredItems = filterCategory === 'all'
-        ? items
-        : items.filter(item => item.category === filterCategory || item.category3 === filterCategory)
 
     // Error state
     if (error && !loading) {
@@ -597,179 +642,197 @@ export default function MyCloset() {
                 </motion.div>
             )}
 
-            {/* View Toggle & Content */}
-            {viewMode === 'grid' ? (
-                <>
-                    {/* Grid View Filters (Text Only) */}
-                    <div style={{ marginBottom: '1rem', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '0.5rem' }}>
-                        <div style={{ display: 'inline-flex', gap: '0.25rem' }}>
-                            <button className={`chip ${filterCategory === 'all' ? 'active' : ''}`} onClick={() => setFilterCategory('all')} style={{ fontSize: '0.75rem', minHeight: '32px' }}>
-                                All ({items.length})
-                            </button>
-                            {EXISTING_CATEGORY3.filter(cat => items.some(i => i.category === cat || i.category3 === cat)).map(cat => (
-                                <button
-                                    key={cat}
-                                    className={`chip ${filterCategory === cat ? 'active' : ''}`}
-                                    onClick={() => setFilterCategory(cat)}
-                                    style={{ fontSize: '0.75rem', minHeight: '32px' }}
-                                >
-                                    {cat} ({items.filter(i => i.category === cat || i.category3 === cat).length})
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Closet Grid */}
-                    {filteredItems.length === 0 ? (
-                        <div className="empty-state">
-                            <TShirt className="empty-state-icon" />
-                            <h3>No items found</h3>
-                            <p>Try changing filters or upload new clothes</p>
-                        </div>
-                    ) : (
-                        <div className="closet-grid">
-                            {filteredItems.map((item, idx) => (
-                                <ItemCard 
-                                    key={item.id} 
-                                    item={item} 
-                                    idx={idx} 
-                                    selectedItems={selectedItems} 
-                                    handleItemClick={handleItemClick} 
-                                    handleDeleteClick={handleDeleteClick} 
-                                />
-                            ))}
-                        </div>
-                    )}
-                </>
-            ) : (
-                /* Rows View */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '5rem' }}>
-                    {EXISTING_CATEGORY3.map(cat => {
-                        const catItems = items.filter(i => i.category === cat || i.category3 === cat)
-                        return (
-                            <div key={cat} style={{ overflow: 'hidden' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', paddingLeft: '0.25rem' }}>
-                                    <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>{cat}</h3>
-                                    <span style={{ fontSize: '0.875rem', color: 'hsl(var(--muted-foreground))' }}>({catItems.length})</span>
-                                </div>
-                                
-                                <div style={{ 
-                                    display: 'flex', 
-                                    gap: '0.75rem', 
-                                    overflowX: 'auto', 
-                                    padding: '0 0.25rem 1rem',
-                                    scrollSnapType: 'x mandatory'
-                                }}>
-                                    {catItems.map((item, idx) => (
-                                        <div key={item.id} style={{ scrollSnapAlign: 'start', flexShrink: 0, width: '140px' }}>
-                                            <ItemCard 
-                                                item={item} 
-                                                idx={idx} 
-                                                selectedItems={selectedItems} 
-                                                handleItemClick={handleItemClick} 
-                                                handleDeleteClick={handleDeleteClick} 
-                                                compact
-                                            />
-                                        </div>
-                                    ))}
-                                    
-                                    {/* Add Button at end of row */}
-                                    <button
-                                        style={{
-                                            scrollSnapAlign: 'start',
-                                            flexShrink: 0,
-                                            width: '60px',
-                                            height: '140px', // Mathcing reduced card height roughly or centered
-                                            alignSelf: 'center', // Vertically center in the row
-                                            borderRadius: 'var(--radius-lg)',
-                                            border: '2px dashed hsl(var(--border))',
-                                            background: 'transparent',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            color: 'hsl(var(--muted-foreground))',
-                                            cursor: 'pointer',
-                                            flexDirection: 'column',
-                                            gap: '0.25rem'
-                                        }}
-                                        onClick={() => {
-                                             if (!user) setShowLogin(true)
-                                             else {
-                                                 // Ideally we pre-select the category, but straightforward upload is fine for now
-                                                 singleFileInputRef.current?.click()
-                                             }
-                                        }}
-                                    >
-                                        <Plus size={24} />
-                                    </button>
-                                </div>
+            {/* Rows View */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '5rem' }}>
+                {EXISTING_CATEGORY3.map(cat => {
+                    const catItems = items.filter(i => i.category === cat || i.category3 === cat)
+                    return (
+                        <div key={cat} style={{ overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', paddingLeft: '0.25rem' }}>
+                                <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>{cat}</h3>
+                                <span style={{ fontSize: '0.875rem', color: 'hsl(var(--muted-foreground))' }}>({catItems.length})</span>
                             </div>
-                        )
-                    })}
-                </div>
-            )}
+                            
+                            <div style={{ 
+                                display: 'flex', 
+                                gap: '0.75rem', 
+                                overflowX: 'auto', 
+                                padding: '0 0.25rem 1rem',
+                                scrollSnapType: 'x mandatory'
+                            }}>
+                                {catItems.map((item, idx) => (
+                                    <div key={item.id} style={{ scrollSnapAlign: 'start', flexShrink: 0, width: '140px' }}>
+                                        <ItemCard 
+                                            item={item} 
+                                            idx={idx} 
+                                            selectedItems={selectedItems} 
+                                            handleItemClick={handleItemClick} 
+                                            handleEditClick={handleEditClick} 
+                                            compact
+                                        />
+                                    </div>
+                                ))}
+                                
+                                {/* Add Button at end of row */}
+                                <button
+                                    style={{
+                                        scrollSnapAlign: 'start',
+                                        flexShrink: 0,
+                                        width: '60px',
+                                        height: '140px',
+                                        alignSelf: 'center',
+                                        borderRadius: 'var(--radius-lg)',
+                                        border: '2px dashed hsl(var(--border))',
+                                        background: 'transparent',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: 'hsl(var(--muted-foreground))',
+                                        cursor: 'pointer',
+                                        flexDirection: 'column',
+                                        gap: '0.25rem'
+                                    }}
+                                    onClick={() => {
+                                         if (!user) setShowLogin(true)
+                                         else singleFileInputRef.current?.click()
+                                    }}
+                                >
+                                    <Plus size={24} />
+                                </button>
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
 
-            {/* View Toggle FAB - Only show when NO items selected */}
+
+
+            {/* Suggest Outfit FAB Bar - Center aligned */}
             <AnimatePresence>
                 {selectedItems.length === 0 && (
-                    <motion.button
-                        initial={{ scale: 0, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0, opacity: 0 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setViewMode(prev => prev === 'grid' ? 'rows' : 'grid')}
+                    <motion.div
+                        initial={{ y: 20, opacity: 0, x: '-50%' }}
+                        animate={{ y: 0, opacity: 1, x: '-50%' }}
+                        exit={{ y: 20, opacity: 0, x: '-50%' }}
                         style={{
                             position: 'fixed',
-                            bottom: '90px', // Above nav bar (approx 66px) + 24px margin
-                            left: '1.5rem', // Left aligned
-                            width: '56px',
-                            height: '56px',
-                            borderRadius: '50%',
-                            background: 'white', 
-                            color: 'black',
-                            border: '1px solid #e5e7eb',
-                            boxShadow: 'var(--shadow-lg)',
+                            bottom: '90px',
+                            left: '50%',
+                            zIndex: 100,
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 100,
-                            cursor: 'pointer'
+                            gap: '0.75rem',
+                            background: 'hsl(var(--card))',
+                            padding: '0.5rem 0.5rem 0.5rem 1rem',
+                            borderRadius: 'var(--radius-full)',
+                            boxShadow: 'var(--shadow-xl)',
+                            border: '1px solid hsl(var(--border))',
                         }}
                     >
-                        {viewMode === 'grid' ? <Rows size={24} weight="fill" /> : <SquaresFour size={24} weight="fill" />}
-                    </motion.button>
-                )}
-            </AnimatePresence>
+                        {/* Mood Dropdown */}
+                        <div style={{ position: 'relative' }}>
+                            <button
+                                onClick={() => setShowMoodDropdown(prev => !prev)}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem',
+                                    padding: '0',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'hsl(var(--foreground))',
+                                    fontSize: '0.875rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
+                                {selectedMood}
+                                <CaretDown size={14} weight="bold" style={{ 
+                                    transition: 'transform 0.2s',
+                                    transform: showMoodDropdown ? 'rotate(180deg)' : 'rotate(0deg)'
+                                }} />
+                            </button>
 
-            {/* Magic Wand FAB - Opposite to Toggle, SAME height */}
-            <AnimatePresence>
-                {selectedItems.length === 0 && (
-                    <motion.button
-                        initial={{ scale: 0, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0, opacity: 0 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleMagicSelect}
-                        style={{
-                            position: 'fixed',
-                            bottom: '90px', 
-                            right: '1.5rem', // Right aligned
-                            width: '56px',
-                            height: '56px',
-                            borderRadius: '50%',
-                            background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                            color: 'white',
-                            border: 'none',
-                            boxShadow: '0 4px 14px 0 rgba(168, 85, 247, 0.5)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 100,
-                            cursor: 'pointer'
-                        }}
-                    >
-                        <MagicWand size={24} weight="fill" />
-                    </motion.button>
+                            {/* Dropdown Menu */}
+                            <AnimatePresence>
+                                {showMoodDropdown && (
+                                    <>
+                                        <div 
+                                            style={{ position: 'fixed', inset: 0, zIndex: 99 }} 
+                                            onClick={() => setShowMoodDropdown(false)} 
+                                        />
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                                            transition={{ duration: 0.15 }}
+                                            style={{
+                                                position: 'absolute',
+                                                bottom: '40px',
+                                                left: 0,
+                                                background: 'hsl(var(--card))',
+                                                border: '1px solid hsl(var(--border))',
+                                                borderRadius: 'var(--radius-lg)',
+                                                boxShadow: 'var(--shadow-xl)',
+                                                padding: '0.35rem',
+                                                zIndex: 200,
+                                                minWidth: '140px'
+                                            }}
+                                        >
+                                            {['Casual', 'Work', 'Party', 'Date Night', 'Chill', 'Ethnic'].map(mood => (
+                                                <button
+                                                    key={mood}
+                                                    onClick={() => {
+                                                        setSelectedMood(mood)
+                                                        setShowMoodDropdown(false)
+                                                    }}
+                                                    style={{
+                                                        display: 'block',
+                                                        width: '100%',
+                                                        textAlign: 'left',
+                                                        padding: '0.5rem 0.75rem',
+                                                        border: 'none',
+                                                        background: selectedMood === mood ? 'hsl(var(--primary) / 0.1)' : 'transparent',
+                                                        color: selectedMood === mood ? 'hsl(var(--primary))' : 'hsl(var(--foreground))',
+                                                        fontSize: '0.8125rem',
+                                                        fontWeight: selectedMood === mood ? 600 : 400,
+                                                        borderRadius: 'var(--radius-md)',
+                                                        cursor: 'pointer',
+                                                        transition: 'background 0.15s'
+                                                    }}
+                                                >
+                                                    {mood}
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    </>
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        {/* Suggest Outfit Button */}
+                        <button
+                            onClick={handleMagicSelect}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.5rem 1rem',
+                                background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: 'var(--radius-full)',
+                                fontSize: '0.8125rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                            }}
+                        >
+                            <MagicWand size={16} weight="fill" />
+                            Suggest Outfit
+                        </button>
+                    </motion.div>
                 )}
             </AnimatePresence>
 
@@ -844,7 +907,7 @@ export default function MyCloset() {
                     />
                 )}
                 
-                {/* Floating Action Bar for Selection (Imagine Me) - Replaces Toggle when items selected */}
+                {/* Floating Action Bar for Selection (Imagine Me) - Replaces Suggest when items selected */}
                 <AnimatePresence>
                     {selectedItems.length > 0 && (
                         <motion.div
@@ -853,13 +916,13 @@ export default function MyCloset() {
                             exit={{ y: 20, opacity: 0, x: '-50%' }}
                             style={{
                                 position: 'fixed',
-                                bottom: '90px', // Same position as Toggle FAB
+                                bottom: '90px',
                                 left: '50%',
                                 zIndex: 900,
                                 display: 'flex',
                                 gap: '0.75rem',
                                 background: 'hsl(var(--card))',
-                                padding: '0.75rem 1rem',
+                                padding: '0.5rem 0.5rem 0.5rem 1rem',
                                 borderRadius: 'var(--radius-full)',
                                 boxShadow: 'var(--shadow-xl)',
                                 border: '1px solid hsl(var(--border))',
@@ -873,7 +936,6 @@ export default function MyCloset() {
                                     background: 'transparent',
                                     color: 'hsl(var(--muted-foreground))',
                                     padding: '0.25rem',
-                                    marginRight: '0.25rem',
                                     borderRadius: '50%',
                                     cursor: 'pointer',
                                     display: 'flex',
@@ -885,17 +947,51 @@ export default function MyCloset() {
                                 <X size={16} weight="bold" />
                             </button>
 
-                            <span style={{ fontSize: '0.875rem', fontWeight: 600, marginRight: '0.5rem' }}>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
                                 {selectedItems.length} selected
                             </span>
+
+                            {/* Retry / Re-suggest button */}
+                            <button
+                                onClick={handleMagicSelect}
+                                title="Suggest again"
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '32px',
+                                    height: '32px',
+                                    padding: 0,
+                                    background: 'hsl(var(--muted))',
+                                    color: 'hsl(var(--foreground))',
+                                    border: '1px solid hsl(var(--border))',
+                                    borderRadius: '50%',
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <ArrowCounterClockwise size={15} weight="bold" />
+                            </button>
                             
                             <button 
-                                className="btn btn-primary"
                                 onClick={handleImagineMeClick}
                                 disabled={tryOnLoading}
-                                style={{ display: 'flex', items: 'center', gap: '0.5rem' }}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    padding: '0.5rem 1rem',
+                                    background: 'hsl(var(--primary))',
+                                    color: 'hsl(var(--primary-foreground))',
+                                    border: 'none',
+                                    borderRadius: 'var(--radius-full)',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 700,
+                                    cursor: tryOnLoading ? 'not-allowed' : 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    opacity: tryOnLoading ? 0.7 : 1,
+                                }}
                             >
-                                {tryOnLoading ? <SpinnerGap className="animate-spin" /> : <Sparkle weight="fill" />}
+                                {tryOnLoading ? <SpinnerGap className="animate-spin" size={16} /> : <Sparkle weight="fill" size={16} />}
                                 Imagine Me
                             </button>
                         </motion.div>
@@ -945,8 +1041,8 @@ export default function MyCloset() {
                                 padding: '0.75rem 1rem', borderBottom: '1px solid hsl(var(--border))'
                             }}>
                                 <div>
-                                    <h3 style={{ fontSize: '1rem', margin: 0 }}>Add to Closet</h3>
-                                    {uploadQueue.length > 1 && (
+                                    <h3 style={{ fontSize: '1rem', margin: 0 }}>{editingItem ? 'Edit Item' : 'Add to Closet'}</h3>
+                                    {!editingItem && uploadQueue.length > 1 && (
                                         <p style={{ margin: 0, fontSize: '0.75rem', color: 'hsl(var(--muted-foreground))' }}>
                                             Item {activeUploadTab + 1} of {uploadQueue.length}
                                         </p>
@@ -1042,7 +1138,7 @@ export default function MyCloset() {
                                             )}
 
                                             {/* Form Fields - Disabled while analyzing */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', opacity: isAnalyzing ? 0.6 : 1, pointerEvents: isAnalyzing ? 'none' : 'auto' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', opacity: isAnalyzing ? 0.6 : 1, pointerEvents: isAnalyzing ? 'none' : 'auto' }}>
 
                                                 {/* Title */}
                                                 <div>
@@ -1065,20 +1161,20 @@ export default function MyCloset() {
                                                         value={analysisData.description || ''}
                                                         onChange={(e) => updateActiveItemField('description', e.target.value)}
                                                         placeholder="Brief details..."
-                                                        style={{ resize: 'none' }}
+                                                        style={{ resize: 'none', fontFamily: 'inherit', fontSize: '0.875rem' }}
                                                     />
                                                 </div>
 
-                                                {/* Category 1 (For Whom) - Moved here */}
+                                                {/* Category 1 (For Whom) */}
                                                 <div>
                                                     <label className="label" style={{ fontSize: '0.75rem' }}>For Whom</label>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                                                         {EXISTING_CATEGORY1.map(cat => (
                                                             <button
                                                                 key={cat} type="button"
                                                                 className={`chip chip-outline ${analysisData.category1 === cat ? 'active' : ''}`}
                                                                 onClick={() => updateActiveItemField('category1', cat)}
-                                                                style={{ fontSize: '0.6875rem', padding: '0.25rem 0.5rem', minHeight: '28px' }}
+                                                                style={{ fontSize: '0.75rem', padding: '0.25rem 0.625rem', minHeight: '30px' }}
                                                             >
                                                                 {cat}
                                                             </button>
@@ -1096,11 +1192,10 @@ export default function MyCloset() {
                                                                 type="button"
                                                                 className={`chip chip-outline ${analysisData.category3 === cat ? 'active' : ''}`}
                                                                 onClick={() => {
-                                                                    // Reset Item Type when Apparel Type changes
                                                                     updateActiveItemField('category3', cat)
                                                                     updateActiveItemField('category2', '')
                                                                 }}
-                                                                style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                                                style={{ fontSize: '0.75rem', padding: '0.25rem 0.625rem', minHeight: '30px' }}
                                                             >
                                                                 {CATEGORY_ICONS[cat] || '👔'} {cat}
                                                             </button>
@@ -1115,7 +1210,7 @@ export default function MyCloset() {
                                                         <div style={{
                                                             display: 'grid',
                                                             gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
-                                                            gap: '0.25rem'
+                                                            gap: '0.375rem'
                                                         }}>
                                                             {CATEGORY_HIERARCHY[analysisData.category3].map(cat => (
                                                                 <button
@@ -1123,9 +1218,9 @@ export default function MyCloset() {
                                                                     className={`chip chip-outline ${analysisData.category2 === cat ? 'active' : ''}`}
                                                                     onClick={() => updateActiveItemField('category2', cat)}
                                                                     style={{ 
-                                                                        fontSize: '0.6875rem', 
-                                                                        padding: '0.25rem 0.5rem', 
-                                                                        minHeight: '28px',
+                                                                        fontSize: '0.75rem', 
+                                                                        padding: '0.25rem 0.625rem', 
+                                                                        minHeight: '30px',
                                                                         justifyContent: 'center' 
                                                                     }}
                                                                 >
@@ -1176,13 +1271,13 @@ export default function MyCloset() {
                                                 {/* Category 4 (Style) */}
                                                 <div>
                                                     <label className="label" style={{ fontSize: '0.75rem' }}>Style</label>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
                                                         {EXISTING_CATEGORY4.map(cat => (
                                                             <button
                                                                 key={cat} type="button"
                                                                 className={`chip chip-outline ${analysisData.category4 === cat ? 'active' : ''}`}
                                                                 onClick={() => updateActiveItemField('category4', cat)}
-                                                                style={{ fontSize: '0.6875rem', padding: '0.125rem 0.5rem', minHeight: '24px' }}
+                                                                style={{ fontSize: '0.75rem', padding: '0.25rem 0.625rem', minHeight: '30px' }}
                                                             >
                                                                 {cat}
                                                             </button>
@@ -1197,9 +1292,23 @@ export default function MyCloset() {
 
                             {/* Footer Buttons */}
                             <div style={{ padding: '1rem', borderTop: '1px solid hsl(var(--border))', display: 'flex', gap: '0.75rem' }}>
-                                <button className="btn btn-outline" style={{ flex: 1 }} onClick={resetForm} disabled={saving}>
-                                    Cancel
-                                </button>
+                                {editingItem ? (
+                                    <button
+                                        className="btn btn-outline"
+                                        style={{ color: 'hsl(var(--destructive))', borderColor: 'hsl(var(--destructive) / 0.3)' }}
+                                        onClick={() => {
+                                            resetForm()
+                                            handleDeleteClick(editingItem.id)
+                                        }}
+                                        disabled={saving}
+                                    >
+                                        <Trash size={16} /> Delete
+                                    </button>
+                                ) : (
+                                    <button className="btn btn-outline" style={{ flex: 1 }} onClick={resetForm} disabled={saving}>
+                                        Cancel
+                                    </button>
+                                )}
                                 <button
                                     className="btn btn-primary"
                                     style={{ flex: 2 }}
@@ -1209,7 +1318,7 @@ export default function MyCloset() {
                                     {saving ? (
                                         <><SpinnerGap size={16} className="animate-spin" /> Saving...</>
                                     ) : (
-                                        <>{uploadQueue.length > 1 ? `Save All (${uploadQueue.length})` : 'Add to Closet'}</>
+                                        editingItem ? 'Save Changes' : (uploadQueue.length > 1 ? `Save All (${uploadQueue.length})` : 'Add to Closet')
                                     )}
                                 </button>
                             </div>
@@ -1222,7 +1331,7 @@ export default function MyCloset() {
     )
 }
 
-function ItemCard({ item, idx, selectedItems, handleItemClick, handleDeleteClick, compact }) {
+function ItemCard({ item, idx, selectedItems, handleItemClick, handleEditClick, compact }) {
     const isSelected = selectedItems.includes(item.id)
     
     return (
@@ -1275,18 +1384,17 @@ function ItemCard({ item, idx, selectedItems, handleItemClick, handleDeleteClick
                     alt={item.title || item.category}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
-                {/* Delete button - top right */}
+                {/* Edit button - top right */}
                 <button
-                    className="btn btn-icon"
                     style={{
                         position: 'absolute',
                         top: compact ? '0.25rem' : '0.5rem',
                         right: compact ? '0.25rem' : '0.5rem',
-                        background: 'rgba(255, 255, 255, 0.5)',
-                        color: 'hsl(var(--destructive))',
-                        width: compact ? '32px' : '40px',
-                        height: compact ? '32px' : '40px',
-                        borderRadius: 'var(--radius-md)',
+                        background: 'rgba(255, 255, 255, 0.7)',
+                        color: 'hsl(var(--foreground))',
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '8px',
                         backdropFilter: 'blur(4px)',
                         display: 'flex',
                         alignItems: 'center',
@@ -1296,10 +1404,10 @@ function ItemCard({ item, idx, selectedItems, handleItemClick, handleDeleteClick
                     }}
                     onClick={(e) => {
                         e.stopPropagation()
-                        handleDeleteClick(item.id)
+                        handleEditClick(item)
                     }}
                 >
-                    <Trash size={compact ? 16 : 20} />
+                    <PencilSimple size={18} weight="bold" />
                 </button>
             </div>
 

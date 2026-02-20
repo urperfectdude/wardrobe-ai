@@ -192,8 +192,6 @@ export async function deleteWardrobeItem(id) {
         const session = await getAuthSession()
         if (!session?.user) throw new Error('Not logged in')
 
-        // Use supabaseFetch with method DELETE usually requires ID in URL
-        // rest/v1/table?id=eq.ID
         await supabaseFetch('wardrobe_items', {
             method: 'DELETE',
             query: `id=eq.${id}`
@@ -202,6 +200,53 @@ export async function deleteWardrobeItem(id) {
     } catch (error) {
         console.error('Error deleting wardrobe item:', error)
         throw new Error('Failed to delete item')
+    }
+}
+
+export async function updateWardrobeItem(id, updates) {
+    try {
+        const session = await getAuthSession()
+        if (!session?.user) throw new Error('Not logged in')
+
+        const body = {}
+        if (updates.title !== undefined) body.title = updates.title
+        if (updates.description !== undefined) body.description = updates.description
+        if (updates.brand !== undefined) body.brand = updates.brand
+        if (updates.color !== undefined) body.color = updates.color
+        if (updates.category !== undefined) body.category = updates.category
+        if (updates.category1 !== undefined) body.category1 = updates.category1
+        if (updates.category2 !== undefined) body.category2 = updates.category2
+        if (updates.category3 !== undefined) body.category3 = updates.category3
+        if (updates.category4 !== undefined) body.category4 = updates.category4
+        body.updated_at = new Date().toISOString()
+
+        const data = await supabaseFetch('wardrobe_items', {
+            method: 'PATCH',
+            query: `id=eq.${id}`,
+            headers: { 'Prefer': 'return=representation' },
+            body
+        })
+
+        const updated = Array.isArray(data) ? data[0] : data
+        return {
+            id: updated.id,
+            image: updated.image_url,
+            title: updated.title,
+            description: updated.description,
+            ai_description: updated.ai_description,
+            brand: updated.brand,
+            category: updated.category,
+            color: updated.color,
+            category1: updated.category1,
+            category2: updated.category2,
+            category3: updated.category3,
+            category4: updated.category4,
+            issue: updated.issue,
+            createdAt: updated.created_at
+        }
+    } catch (error) {
+        console.error('Error updating wardrobe item:', error)
+        throw new Error('Failed to update item')
     }
 }
 
