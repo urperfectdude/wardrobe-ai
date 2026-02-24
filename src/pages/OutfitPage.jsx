@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Heart, ShareNetwork, Sparkle, UserCircle } from '@phosphor-icons/react'
+import { ArrowLeft, Heart, ShareNetwork, Sparkle, UserCircle, Globe, Lock } from '@phosphor-icons/react'
 import { getOutfitById, getPublicProfileById, getLikeCount, hasLikedOutfit, likeOutfit, unlikeOutfit, isFollowing, followUser, unfollowUser } from '../utils/social'
 import { updateRecentOutfit } from '../utils/storage'
 import { generateTryOn } from '../utils/generateTryOn'
@@ -19,6 +19,7 @@ export default function OutfitPage() {
     const [likeLoading, setLikeLoading] = useState(false)
     const [isFollowingOwner, setIsFollowingOwner] = useState(false)
     const [followLoading, setFollowLoading] = useState(false)
+    const [isPublic, setIsPublic] = useState(false)
     
     // Try-On State
     const [tryOnLoading, setTryOnLoading] = useState(false)
@@ -45,6 +46,7 @@ export default function OutfitPage() {
             setLikes(likeCount)
             setHasLiked(liked)
             setIsFollowingOwner(following)
+            setIsPublic(outfitData.is_public || false)
         } catch (err) {
             console.error('Error loading outfit:', err)
         } finally {
@@ -70,6 +72,20 @@ export default function OutfitPage() {
             // Revert on error if needed, but for now just log
         } finally {
             setLikeLoading(false)
+        }
+    }
+
+    const handleTogglePublic = async () => {
+        if (!user || user.id !== outfit.user_id) return
+        
+        const newValue = !isPublic
+        setIsPublic(newValue) // Optimistic update
+        
+        try {
+            await updateRecentOutfit(id, { is_public: newValue })
+        } catch (error) {
+            console.error('Failed to update public status:', error)
+            setIsPublic(!newValue) // Revert on error
         }
     }
 
@@ -165,6 +181,7 @@ export default function OutfitPage() {
     }
 
     const items = outfit.items || []
+    const likedItems = items.filter(item => item.liked)
 
     return (
         <div className="container" style={{ maxWidth: '600px' }}>
@@ -244,6 +261,40 @@ export default function OutfitPage() {
                             </span>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            {/* Owner Toggle Public */}
+                            {user && user.id === outfit.user_id && (
+                                <button
+                                    onClick={handleTogglePublic}
+                                    style={{
+                                        height: '32px',
+                                        padding: '0 0.75rem',
+                                        borderRadius: 'var(--radius-full)',
+                                        background: isPublic ? 'hsl(var(--primary))' : 'hsl(var(--muted))',
+                                        border: 'none',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.375rem',
+                                        cursor: 'pointer',
+                                        color: isPublic ? 'white' : 'hsl(var(--muted-foreground))',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {isPublic ? (
+                                        <>
+                                            <Globe size={14} weight="bold" />
+                                            Public
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Lock size={14} weight="bold" />
+                                            Private
+                                        </>
+                                    )}
+                                </button>
+                            )}
+
                             {/* Imagine Me Button (Only for owner or generally available? Plan implies available to all) */}
                             {!outfit.imagine_on_avatar && user && (
                                 <button
@@ -294,75 +345,90 @@ export default function OutfitPage() {
                         </div>
                     </div>
 
-                    {/* Items Grid */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(${Math.min(items.length, 3)}, 1fr)`,
-                        gap: '0.5rem'
-                    }}>
-                        {items.map((item, idx) => (
-                            <motion.div
-                                key={idx}
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: idx * 0.1 }}
-                                style={{
-                                    borderRadius: 'var(--radius-lg)',
-                                    overflow: 'hidden',
-                                    border: '1px solid hsl(var(--border))',
-                                    background: 'white'
-                                }}
-                            >
-                                <img
-                                    src={item.image}
-                                    alt={item.title || item.name || 'Item'}
-                                    style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover' }}
-                                />
-                                <div style={{ padding: '0.5rem' }}>
-                                    <p style={{
-                                        fontSize: '0.6875rem', fontWeight: 600, margin: 0,
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                    }}>
-                                        {item.title || item.name}
-                                    </p>
-                                    {item.color && (
-                                        <span style={{
-                                            fontSize: '0.5625rem', color: 'hsl(var(--muted-foreground))'
-                                        }}>{item.color}</span>
-                                    )}
-                                </div>
-                            </motion.div>
-                        ))}
-                    </div>
-
-                    {/* Imagine Me Result */}
+                    {/* Imagine Me Result - Prominent View */}
                     {outfit.imagine_on_avatar && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            style={{ 
-                                marginTop: '1rem', 
-                                position: 'relative', 
-                                borderRadius: 'var(--radius-lg)', 
-                                overflow: 'hidden',
-                                border: '1px solid hsl(var(--border))'
-                            }}
-                        >
-                            <div style={{ 
-                                position: 'absolute', top: '0.5rem', left: '0.5rem', 
-                                background: 'rgba(0,0,0,0.6)', color: 'white', 
-                                padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-full)',
-                                fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem'
-                            }}>
-                                <Sparkle weight="fill" /> Virtual Try-On
-                            </div>
+                        <div style={{ 
+                            marginBottom: '1.5rem',
+                            marginTop: '1rem',
+                            width: '100%',
+                            maxWidth: '320px',
+                            margin: '1rem auto 1.5rem',
+                            aspectRatio: '3/4',
+                            background: '#000',
+                            borderRadius: 'var(--radius-xl)',
+                            overflow: 'hidden',
+                            boxShadow: 'var(--shadow-lg)',
+                            border: '1px solid hsl(var(--border))'
+                        }}>
                             <img 
                                 src={outfit.imagine_on_avatar} 
-                                alt="Virtual Try-On" 
-                                style={{ width: '100%', display: 'block' }} 
+                                alt="Imagine Me Result" 
+                                style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
                             />
-                        </motion.div>
+                        </div>
                     )}
+
+                    {/* Items Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginTop: outfit.imagine_on_avatar ? '0' : '1.5rem' }}>
+                        {items.map((item, idx) => (
+                            <div key={idx} style={{
+                                display: 'flex',
+                                gap: '1rem',
+                                background: item.liked ? 'white' : 'transparent',
+                                padding: item.liked ? '0.75rem' : '0.25rem',
+                                borderRadius: 'var(--radius-xl)',
+                                border: item.liked ? '1px solid hsl(var(--border))' : 'none',
+                                opacity: item.liked ? 1 : 0.6,
+                                cursor: 'pointer',
+                                transition: 'opacity 0.2s',
+                            }}>
+                                <div style={{ position: 'relative', width: '100px', height: '100px', flexShrink: 0 }}>
+                                    <img
+                                        src={item.image}
+                                        alt={item.title || item.name || 'Item'}
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-lg)' }}
+                                    />
+                                    {item.liked && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '-0.375rem',
+                                            right: '-0.375rem',
+                                            width: '20px',
+                                            height: '20px',
+                                            borderRadius: '50%',
+                                            background: 'hsl(var(--accent))',
+                                            color: 'white',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '10px'
+                                        }}>
+                                            <Heart size={10} fill="currentColor" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.25rem' }}>
+                                        <span style={{
+                                            fontSize: '0.625rem',
+                                            fontWeight: 700,
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            background: item.source === 'closet' ? 'hsl(142 71% 45%)' : 'hsl(220 60% 50%)',
+                                            color: 'white'
+                                        }}>
+                                            {item.source === 'closet' ? 'PRELOVED' : (item.platform || 'SHOP')}
+                                        </span>
+                                        {item.price && <span style={{ fontSize: '0.8125rem', fontWeight: 700 }}>₹{item.price}</span>}
+                                    </div>
+                                    <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+                                        {item.title || item.name}
+                                    </h3>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
 
                     {/* Description */}
                     {outfit.reason && (

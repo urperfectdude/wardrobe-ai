@@ -257,3 +257,76 @@ export async function analyzeImageForGeneration(imageBase64) {
         return null
     }
 }
+
+// Suggest a missing item (addon) based on selected items
+export async function suggestOutfitAddon(selectedItems) {
+    if (!isGeminiConfigured() || !selectedItems?.length) return null
+
+    try {
+        const itemDescriptions = selectedItems
+            .map(i => `${i.title || i.name} (${i.color || ''} ${i.category3 || i.category || ''})`)
+            .join(', ')
+
+        const systemPrompt = `You are an expert fashion stylist. The user has selected the following clothing items:
+        ${itemDescriptions}
+        
+        Your task is to suggest ONE perfect complementary item to complete this outfit.
+        
+        AVAILABLE CATEGORIES TO CHOOSE FROM:
+        ${EXISTING_CATEGORY3.join(', ')}
+        
+        AVAILABLE COLORS TO CHOOSE FROM (pick the closest match):
+        ${EXISTING_COLORS.join(', ')}
+        
+        AVAILABLE STYLES TO CHOOSE FROM:
+        ${EXISTING_CATEGORY4.join(', ')}
+
+        YOUR RESPONSE MUST BE EXACTLY IN THIS FORMAT (no markdown, no bolding):
+        category: [One of the AVAILABLE CATEGORIES]
+        color: [One of the AVAILABLE COLORS]
+        style: [One of the AVAILABLE STYLES]
+        description: [A short 1-sentence description of the exact item, e.g. "A classic tailored black blazer"]
+        reason: [A 1-sentence explanation of why this completes the look]`
+
+        const content = await createGeminiCompletion({
+            systemPrompt,
+            prompt: 'Suggest the perfect addon item for my selected clothes.',
+            maxTokens: 300,
+            temperature: 0.5
+        })
+
+        // Parse response
+        const result = {
+            category: '',
+            color: '',
+            style: '',
+            description: '',
+            reason: ''
+        }
+        
+        if (!content) return null
+
+        const lines = content.replace(/```\w*\n/g, '').replace(/```/g, '').split('\n')
+        
+        for (const line of lines) {
+            const colonIndex = line.indexOf(':')
+            if (colonIndex === -1) continue
+
+            const key = line.substring(0, colonIndex).replace(/[*_\\-]/g, '').trim().toLowerCase()
+            const value = line.substring(colonIndex + 1).trim()
+
+            switch (key) {
+                case 'category': result.category = value; break
+                case 'color': result.color = value; break
+                case 'style': result.style = value; break
+                case 'description': result.description = value; break
+                case 'reason': result.reason = value; break
+            }
+        }
+
+        return result
+    } catch (error) {
+        console.error('Error suggesting addon:', error)
+        return null
+    }
+}

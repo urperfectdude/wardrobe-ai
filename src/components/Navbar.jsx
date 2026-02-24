@@ -34,6 +34,7 @@ export default function Navbar() {
                         <Shirt size={20} />
                         <span>Closet</span>
                     </NavLink>
+                    {/* Outfit page hidden for now
                     <NavLink
                         to="/outfit"
                         className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
@@ -41,6 +42,7 @@ export default function Navbar() {
                         <Wand2 size={20} />
                         <span>Outfit</span>
                     </NavLink>
+                    */}
 
                     <NavLink
                         to="/profile"

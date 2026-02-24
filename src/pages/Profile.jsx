@@ -6,7 +6,6 @@ import { useAuth } from '../contexts/AuthContext'
 import { getPreferences, getSavedOutfits, getRecentOutfits } from '../utils/storage'
 import OnboardingFlow from '../components/OnboardingFlow'
 import PreferencesFlow from '../components/PreferencesFlow'
-import PublicOutfitModal from '../components/PublicOutfitModal'
 
 export default function Profile() {
     const navigate = useNavigate()
@@ -14,7 +13,6 @@ export default function Profile() {
     const [showOnboarding, setShowOnboarding] = useState(false)
     const [showPreferencesFlow, setShowPreferencesFlow] = useState(false)
     const [activeTab, setActiveTab] = useState('outfits')
-    const [selectedOutfit, setSelectedOutfit] = useState(null)
     const [savedOutfits, setSavedOutfits] = useState([])
     const [recentOutfits, setRecentOutfits] = useState([])
 
@@ -372,7 +370,7 @@ export default function Profile() {
                                 key={outfit.id}
                                 className="card"
                                 style={{ padding: '0.75rem', overflow: 'hidden', cursor: 'pointer' }}
-                                onClick={() => setSelectedOutfit(outfit)}
+                                onClick={() => navigate(`/outfit/${outfit.id}`)}
                             >
                                 {/* Horizontal Items Strip with Fade & CTA - No Header */}
                                 <div style={{ position: 'relative', height: '120px' }}>
@@ -471,7 +469,7 @@ export default function Profile() {
                                 key={outfit.id}
                                 className="card"
                                 style={{ padding: '0.75rem', overflow: 'hidden', cursor: 'pointer' }}
-                                onClick={() => setSelectedOutfit(outfit)}
+                                onClick={() => navigate(`/outfit/${outfit.id}`)}
                             >
                                 {/* Horizontal Items Strip with Fade & CTA - No Header */}
                                 <div style={{ position: 'relative', height: '120px' }}>
@@ -563,16 +561,6 @@ export default function Profile() {
                 Sign Out
             </motion.button>
 
-            {/* Public Outfit Detail Modal */}
-            <AnimatePresence>
-                {selectedOutfit && (
-                    <PublicOutfitModal
-                        isOpen={!!selectedOutfit}
-                        onClose={() => setSelectedOutfit(null)}
-                        outfit={selectedOutfit}
-                    />
-                )}
-            </AnimatePresence>
         </div>
     )
 }

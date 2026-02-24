@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple, Check, SignIn, Plus, MagicWand } from '@phosphor-icons/react'
+import { UploadSimple, X, TShirt, Trash, Sparkle, SpinnerGap, WarningCircle, ArrowCounterClockwise, CaretDown, PencilSimple, Check, SignIn, Plus, MagicWand, FloppyDisk } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     getWardrobeItems,
@@ -15,11 +15,14 @@ import { useNavigate } from 'react-router-dom'
 import MissingDataModal from '../components/MissingDataModal'
 import { generateTryOn } from '../utils/generateTryOn'
 import { useAuth } from '../contexts/AuthContext'
+import { generateGeminiImage } from '../lib/gemini'
 import OnboardingFlow from '../components/OnboardingFlow'
 import ImagineMeResultModal from '../components/ImagineMeResultModal'
+import SuggestAddonModal from '../components/SuggestAddonModal'
 import { trackUserAction } from '../utils/analytics'
 import {
     analyzeClothingImage,
+    suggestOutfitAddon,
     EXISTING_COLORS,
     EXISTING_BRANDS,
     EXISTING_CATEGORY1,
@@ -103,6 +106,13 @@ export default function MyCloset() {
     // Imagine Me Result State
     const [showImagineModal, setShowImagineModal] = useState(false)
     const [imagineResult, setImagineResult] = useState(null)
+
+    // Suggest Addon State
+    const [showAddonModal, setShowAddonModal] = useState(false)
+    const [addonSuggestion, setAddonSuggestion] = useState(null)
+    const [addonLoading, setAddonLoading] = useState(false)
+    const [addonImage, setAddonImage] = useState(null)
+    const [addonStatus, setAddonStatus] = useState('')
 
     // Refs for file inputs
     const singleFileInputRef = useRef(null)
@@ -239,6 +249,74 @@ export default function MyCloset() {
                 return [...prev, item.id]
             }
         })
+    }
+
+    // Save selected items as an outfit
+    const handleSaveSelection = async () => {
+        if (selectedItems.length === 0) return
+        trackUserAction('save_selection_click', { selected_count: selectedItems.length })
+
+        const selectedItemObjects = items.filter(item => selectedItems.includes(item.id))
+        try {
+            const outfit = {
+                items: selectedItemObjects,
+                mood: selectedMood || 'Custom',
+                description: `Saved outfit with ${selectedItemObjects.length} items`,
+                missing_items: []
+            }
+            await saveRecentOutfit(outfit, {
+                thriftPreference: 'both',
+                sizes: [],
+                budget: [0, 10000]
+            })
+            setToast({ message: 'Outfit saved!', visible: true })
+            setSelectedItems([])
+        } catch (err) {
+            console.error('Failed to save outfit:', err)
+            setToast({ message: 'Failed to save outfit', visible: true })
+        }
+    }
+
+    // "Suggest Addon" Flow — runs AI suggestion + image generation in one go
+    const handleSuggestAddon = async () => {
+        if (selectedItems.length === 0) return
+        trackUserAction('suggest_addon_click', { selected_count: selectedItems.length })
+
+        const selectedItemData = items.filter(item => selectedItems.includes(item.id))
+        setAddonLoading(true)
+        setAddonSuggestion(null)
+        setAddonImage(null)
+        setAddonStatus('Analyzing your selection…')
+        setShowAddonModal(true)
+
+        try {
+            // Step 1: Get AI suggestion
+            const suggestion = await suggestOutfitAddon(selectedItemData)
+            if (!suggestion || !suggestion.description) {
+                setAddonLoading(false)
+                return
+            }
+            setAddonSuggestion(suggestion)
+
+            // Step 2: Generate image automatically
+            setAddonStatus('Generating visual preview…')
+            const prompt = `A professional product photo of ${suggestion.description}. ${suggestion.color || ''} color, ${suggestion.style || ''} style. Clean white background, no model, flat lay, high quality fashion photography.`
+
+            const results = await generateGeminiImage({
+                prompt,
+                numberOfImages: 1,
+                aspectRatio: '1:1'
+            })
+
+            if (results?.length > 0) {
+                setAddonImage(results[0])
+            }
+        } catch (err) {
+            console.error('Suggest addon failed:', err)
+        } finally {
+            setAddonLoading(false)
+            setAddonStatus('')
+        }
     }
 
     // "Imagine Me" Flow
@@ -980,6 +1058,49 @@ export default function MyCloset() {
                             >
                                 <ArrowCounterClockwise size={15} weight="bold" />
                             </button>
+
+                            {/* Suggest Addon Button */}
+                            <button
+                                onClick={handleSuggestAddon}
+                                disabled={addonLoading}
+                                title="Suggest addon"
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '32px',
+                                    height: '32px',
+                                    padding: 0,
+                                    background: 'hsl(var(--accent) / 0.15)',
+                                    color: 'hsl(var(--accent))',
+                                    border: '1px solid hsl(var(--accent) / 0.3)',
+                                    borderRadius: '50%',
+                                    cursor: addonLoading ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                {addonLoading ? <SpinnerGap size={15} className="animate-spin" /> : <MagicWand size={15} weight="bold" />}
+                            </button>
+                            
+                            {/* Save Outfit Button */}
+                            <button
+                                onClick={handleSaveSelection}
+                                title="Save as outfit"
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '32px',
+                                    height: '32px',
+                                    padding: 0,
+                                    background: 'hsl(var(--muted))',
+                                    color: 'hsl(var(--foreground))',
+                                    border: '1px solid hsl(var(--border))',
+                                    borderRadius: '50%',
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <FloppyDisk size={15} weight="bold" />
+                            </button>
                             
                             <button 
                                 onClick={handleImagineMeClick}
@@ -1018,6 +1139,15 @@ export default function MyCloset() {
                     isOpen={showImagineModal}
                     onClose={() => setShowImagineModal(false)}
                     outfit={imagineResult}
+                />
+
+                <SuggestAddonModal
+                    isOpen={showAddonModal}
+                    onClose={() => setShowAddonModal(false)}
+                    suggestion={addonSuggestion}
+                    generatedImage={addonImage}
+                    loading={addonLoading}
+                    loadingStatus={addonStatus}
                 />
 
                 {/* Unified Upload Modal */}

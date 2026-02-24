@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { getPublicOutfits } from '../utils/storage'
 import { useAuth } from '../contexts/AuthContext'
 import OnboardingFlow from '../components/OnboardingFlow'
-import PublicOutfitModal from '../components/PublicOutfitModal'
 import PublicOutfitCard from '../components/PublicOutfitCard'
 
 export default function Home() {
@@ -13,7 +12,6 @@ export default function Home() {
     const { user, loading: authLoading } = useAuth()
     const [publicOutfits, setPublicOutfits] = useState([])
     const [loadingOutfits, setLoadingOutfits] = useState(true)
-    const [selectedOutfit, setSelectedOutfit] = useState(null)
     const [showLogin, setShowLogin] = useState(false)
     const [pendingMood, setPendingMood] = useState(null)
     const [searchQuery, setSearchQuery] = useState('')
@@ -263,7 +261,7 @@ export default function Home() {
                             <PublicOutfitCard
                                 key={outfit.id}
                                 outfit={outfit}
-                                onClick={() => setSelectedOutfit(outfit)}
+                                onClick={() => navigate(`/outfit/${outfit.id}`)}
                                 onMoodSelect={handleMoodSelect}
                             />
                         ))}
@@ -290,17 +288,6 @@ export default function Home() {
                     )}
                 </section>
             )}
-
-            {/* Public Outfit Detail Modal */}
-            <AnimatePresence>
-                {selectedOutfit && (
-                    <PublicOutfitModal
-                        isOpen={!!selectedOutfit}
-                        onClose={() => setSelectedOutfit(null)}
-                        outfit={selectedOutfit}
-                    />
-                )}
-            </AnimatePresence>
 
             {/* Login Modal */}
             <AnimatePresence>
