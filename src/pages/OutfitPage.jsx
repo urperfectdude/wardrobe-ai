@@ -143,7 +143,10 @@ export default function OutfitPage() {
                     age: userProfile?.age,
                     bodyType: userProfile?.body_type,
                     skinColor: userProfile?.skin_color,
-                    hairColor: userProfile?.hair_color
+                    hairColor: userProfile?.hair_color,
+                    preferredStyles: userProfile?.preferred_styles,
+                    fitType: userProfile?.fit_type,
+                    shoppingChoice: userProfile?.shopping_choice
                 },
                 outfit.items,
                 userProfile?.profile_picture || userProfile?.selfie_url

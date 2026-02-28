@@ -10,6 +10,7 @@ import GetOutfit from './pages/GetOutfit'
 import Profile from './pages/Profile'
 import UserProfile from './pages/UserProfile'
 import OutfitPage from './pages/OutfitPage'
+import StoreDemo from './pages/StoreDemo'
 
 function App() {
     const location = useLocation()
@@ -30,6 +31,7 @@ function App() {
                     <Route path="/profile" element={<Profile />} />
                     <Route path="/user/:username" element={<UserProfile />} />
                     <Route path="/outfit/:id" element={<OutfitPage />} />
+                    <Route path="/store-demo" element={<StoreDemo />} />
                 </Routes>
             </main>
         </AuthProvider>

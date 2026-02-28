@@ -1,6 +1,6 @@
 import { generateGeminiImage } from '../lib/gemini'
 import { uploadImageToStorage as uploadImage, urlToBase64 } from './storage'
-import { analyzeImageForGeneration } from './openaiAnalysis'
+import { analyzeImageForGeneration, analyzeSelfieForGeneration } from './openaiAnalysis'
 
 /**
  * Generates a Virtual Try-On image using Gemini Imagen 3
@@ -57,16 +57,36 @@ export async function generateTryOn(userProfile, items, userSelfieUrl) {
         }
         const outfitDescription = outfitParts.join('. ')
 
+        // 1c. Analyze User Selfie if provided
+        let selfieDescription = ''
+        if (userSelfieUrl) {
+            try {
+                console.log('Analyzing user selfie for facial likeness...')
+                const selfieBase64 = await urlToBase64(userSelfieUrl)
+                const analysis = await analyzeSelfieForGeneration(selfieBase64)
+                if (analysis) {
+                    selfieDescription = analysis
+                    console.log('AI Selfie Description:', selfieDescription)
+                }
+            } catch (err) {
+                console.warn('Failed to analyze user selfie:', err)
+            }
+        }
+
         const userDescription = [
             userProfile.gender || 'person',
             userProfile.age ? `${userProfile.age} years old` : '',
             userProfile.bodyType ? `${userProfile.bodyType} body type` : '',
             userProfile.skinColor ? `${userProfile.skinColor} skin tone` : '',
-            userProfile.hairColor ? `${userProfile.hairColor} hair` : ''
+            userProfile.hairColor ? `${userProfile.hairColor} hair` : '',
+            userProfile.preferredStyles?.length ? `with a ${userProfile.preferredStyles.join(' and ')} aesthetic` : '',
+            userProfile.fitType?.length ? `preferring ${userProfile.fitType.join('/')} fit` : ''
         ].filter(Boolean).join(', ')
 
+        const faceDetails = selfieDescription ? `\nModel Facial Details: ${selfieDescription}\n` : ''
+
         // Build a clear, single-model prompt
-        const prompt = `Fashion editorial photograph of exactly ONE single ${userDescription || 'model'} wearing a complete outfit.
+        const prompt = `Fashion editorial photograph of exactly ONE single ${userDescription || 'model'} wearing a complete outfit.${faceDetails}
 
 The outfit consists of: ${outfitDescription}.
 

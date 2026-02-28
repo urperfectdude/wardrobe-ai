@@ -331,7 +331,7 @@ export default function MyCloset() {
                 setTryOnLoading(false)
                 setShowMissingDataModal(true)
             } else {
-                executeTryOn()
+                executeTryOn(freshProfile)
             }
         } catch (e) {
             console.warn('Profile check failed:', e)
@@ -341,28 +341,32 @@ export default function MyCloset() {
             if (!isProfileComplete) {
                 setShowMissingDataModal(true)
             } else {
-                executeTryOn()
+                executeTryOn(userProfile)
             }
         }
     }
 
-    const executeTryOn = async () => {
+    const executeTryOn = async (profileData) => {
         setShowMissingDataModal(false)
         setTryOnLoading(true)
         try {
             const selectedItemObjects = items.filter(i => selectedItems.includes(i.id))
+            const activeProfile = profileData || userProfile || {}
             
             // Generate Image
             const tryOnImageUrl = await generateTryOn(
                 {
-                    gender: userProfile?.gender || 'woman',
-                    age: userProfile?.age,
-                    bodyType: userProfile?.body_type,
-                    skinColor: userProfile?.skin_color,
-                    hairColor: userProfile?.hair_color
+                    gender: activeProfile?.gender || 'woman',
+                    age: activeProfile?.age,
+                    bodyType: activeProfile?.body_type,
+                    skinColor: activeProfile?.skin_color,
+                    hairColor: activeProfile?.hair_color,
+                    preferredStyles: activeProfile?.preferred_styles,
+                    fitType: activeProfile?.fit_type,
+                    shoppingChoice: activeProfile?.shopping_choice
                 },
                 selectedItemObjects,
-                userProfile?.profile_picture || userProfile?.selfie_url
+                activeProfile?.profile_picture || activeProfile?.selfie_url
             )
             console.log('Try-On Result URL:', tryOnImageUrl)
 

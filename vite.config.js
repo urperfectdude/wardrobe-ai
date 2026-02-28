@@ -6,5 +6,18 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true
+  },
+  build: {
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['@phosphor-icons/react', 'framer-motion', 'lucide-react'],
+          supabase: ['@supabase/supabase-js'],
+          ai: ['openai']
+        }
+      }
+    }
   }
 })

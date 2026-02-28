@@ -258,6 +258,38 @@ export async function analyzeImageForGeneration(imageBase64) {
     }
 }
 
+// Analyze user selfie for image generation to maintain facial likeness
+export async function analyzeSelfieForGeneration(imageBase64) {
+    if (!isGeminiConfigured()) return null
+
+    try {
+        const systemPrompt = `You are an expert portrait describer. 
+        Your goal is to describe the person's face and head in the image in EXTREME VISUAL DETAIL so that an image generator can recreate their face/head accurately.
+        
+        Focus on:
+        - Facial structure (jawline, nose shape, eye shape, lip fullness)
+        - Hair exact style, length, texture, and color (e.g. "short faded buzzcut", "long wavy blonde hair parted down the middle")
+        - Facial hair, if any
+        - Distinguishing marks (glasses, freckles, etc.)
+        
+        Do NOT describe the clothing or the background. Only the head and face.
+        Keep the description under 50 words, dense with visual adjectives.`
+
+        const content = await createGeminiVisionCompletion({
+            systemPrompt,
+            userPrompt: 'Describe this person\'s face and hair visually for an image generator.',
+            imageBase64,
+            maxTokens: 100,
+            temperature: 0.2
+        })
+
+        return content
+    } catch (error) {
+        console.error('Gemini selfie analysis failed:', error)
+        return null
+    }
+}
+
 // Suggest a missing item (addon) based on selected items
 export async function suggestOutfitAddon(selectedItems) {
     if (!isGeminiConfigured() || !selectedItems?.length) return null
